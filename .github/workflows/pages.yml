@@ -2,7 +2,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: ["codex/competitive-quiz"]
+    branches: ["gh-pages"]
     paths:
       - "github-pages/**"
       - ".github/workflows/pages.yml"
