@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
 import { isAdmin } from "@/lib/admin-auth";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeRoomCode } from "@/lib/api";
 import { QUESTION_COUNT, QUESTIONS, publicQuestion } from "@/lib/questions";
 
-export async function GET(_request: Request, context: { params: Promise<{ code: string }> }) {
-  if (!(await isAdmin())) return apiError("Требуется вход администратора", 401);
+export const OPTIONS = corsOptions;
+
+export async function GET(request: Request, context: { params: Promise<{ code: string }> }) {
+  if (!(await isAdmin(request))) return apiError("Требуется вход администратора", 401);
   const code = normalizeRoomCode((await context.params).code);
   const db = getD1();
   const room = await db.prepare(`
@@ -23,7 +24,7 @@ export async function GET(_request: Request, context: { params: Promise<{ code: 
   `).bind(room.id).all();
   const questionIndex = Number(room.currentQuestion);
   const question = publicQuestion(questionIndex);
-  return NextResponse.json({
+  return apiJson({
     room: { ...room, questionCount: QUESTION_COUNT },
     question: question ? { ...question, correctIndex: QUESTIONS[questionIndex].correctIndex, explanation: QUESTIONS[questionIndex].explanation } : null,
     players: players.results,

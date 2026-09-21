@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import QRCode from "qrcode";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, corsHeaders, corsOptions, normalizeRoomCode } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -17,6 +19,7 @@ export async function GET(request: Request) {
   });
   return new Response(svg, {
     headers: {
+      ...corsHeaders,
       "Content-Type": "image/svg+xml; charset=utf-8",
       "Cache-Control": "no-store",
       "X-Quiz-Join-Url": joinUrl,

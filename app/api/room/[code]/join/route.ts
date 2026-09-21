@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
-import { apiError, normalizeName, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeName, normalizeRoomCode } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
   const code = normalizeRoomCode((await context.params).code);
@@ -17,5 +18,5 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     INSERT INTO players (id, room_id, name, score, joined_at, last_seen_at)
     VALUES (?, ?, ?, 0, ?, ?)
   `).bind(id, room.id, name, now, now).run();
-  return NextResponse.json({ playerId: id, roomCode: code, name });
+  return apiJson({ playerId: id, roomCode: code, name });
 }

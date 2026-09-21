@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
 import { isAdmin } from "@/lib/admin-auth";
-import { apiError } from "@/lib/api";
+import { apiError, apiJson, corsOptions } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -10,8 +11,8 @@ function makeCode() {
   return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join("");
 }
 
-export async function GET() {
-  if (!(await isAdmin())) return apiError("Требуется вход администратора", 401);
+export async function GET(request: Request) {
+  if (!(await isAdmin(request))) return apiError("Требуется вход администратора", 401);
   const result = await getD1().prepare(`
     SELECT r.id, r.code, r.title, r.status, r.current_question AS currentQuestion,
            r.created_at AS createdAt, COUNT(p.id) AS playerCount
@@ -20,11 +21,11 @@ export async function GET() {
     GROUP BY r.id
     ORDER BY r.created_at DESC
   `).all();
-  return NextResponse.json({ rooms: result.results });
+  return apiJson({ rooms: result.results });
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdmin())) return apiError("Требуется вход администратора", 401);
+  if (!(await isAdmin(request))) return apiError("Требуется вход администратора", 401);
   const body = await request.json().catch(() => ({}));
   const title = String(body.title ?? "Коммерческая деятельность производства").trim().slice(0, 80) || "Коммерческая деятельность производства";
   const db = getD1();
@@ -40,5 +41,5 @@ export async function POST(request: Request) {
     INSERT INTO rooms (id, code, title, status, current_question, created_at, updated_at)
     VALUES (?, ?, ?, 'lobby', 0, ?, ?)
   `).bind(id, code, title, now, now).run();
-  return NextResponse.json({ room: { id, code, title, status: "lobby", currentQuestion: 0, playerCount: 0 } });
+  return apiJson({ room: { id, code, title, status: "lobby", currentQuestion: 0, playerCount: 0 } });
 }

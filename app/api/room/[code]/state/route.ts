@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeRoomCode } from "@/lib/api";
 import { QUESTION_COUNT, QUESTIONS, publicQuestion } from "@/lib/questions";
+
+export const OPTIONS = corsOptions;
 
 export async function GET(request: Request, context: { params: Promise<{ code: string }> }) {
   const code = normalizeRoomCode((await context.params).code);
@@ -34,7 +35,7 @@ export async function GET(request: Request, context: { params: Promise<{ code: s
   const answeredQuestion = answer && QUESTIONS[questionIndex]
     ? { ...answer, correctIndex: QUESTIONS[questionIndex].correctIndex, explanation: QUESTIONS[questionIndex].explanation }
     : null;
-  return NextResponse.json({
+  return apiJson({
     room: { ...room, questionCount: QUESTION_COUNT },
     question,
     player,

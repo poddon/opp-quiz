@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
+import { apiJson, corsOptions } from "@/lib/api";
 
-export async function GET() {
-  const authenticated = await isAdmin();
-  return NextResponse.json({ authenticated }, { status: authenticated ? 200 : 401 });
+export const OPTIONS = corsOptions;
+
+export async function GET(request: Request) {
+  const authenticated = await isAdmin(request);
+  return apiJson({ authenticated }, { status: authenticated ? 200 : 401 });
 }

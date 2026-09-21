@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
-import { createAdminSession, passwordMatches } from "@/lib/admin-auth";
-import { apiError } from "@/lib/api";
+import { createAdminToken, passwordMatches, setAdminSession } from "@/lib/admin-auth";
+import { apiError, apiJson, corsOptions } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
@@ -9,7 +10,8 @@ export async function POST(request: Request) {
   if (username !== "admin" || !(await passwordMatches(password))) {
     return apiError("Неверная должность или пароль", 401);
   }
-  const response = NextResponse.json({ ok: true });
-  await createAdminSession(response);
+  const token = await createAdminToken();
+  const response = apiJson({ ok: true, token });
+  setAdminSession(response, token);
   return response;
 }

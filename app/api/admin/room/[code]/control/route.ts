@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
 import { isAdmin } from "@/lib/admin-auth";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeRoomCode } from "@/lib/api";
 import { QUESTION_COUNT } from "@/lib/questions";
 
+export const OPTIONS = corsOptions;
+
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
-  if (!(await isAdmin())) return apiError("Требуется вход администратора", 401);
+  if (!(await isAdmin(request))) return apiError("Требуется вход администратора", 401);
   const code = normalizeRoomCode((await context.params).code);
   const body = await request.json().catch(() => ({}));
   const action = String(body.action ?? "");
@@ -34,5 +35,5 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
 
   await db.prepare("UPDATE rooms SET status = ?, current_question = ?, updated_at = ? WHERE id = ?")
     .bind(status, currentQuestion, Date.now(), room.id).run();
-  return NextResponse.json({ ok: true, status, currentQuestion });
+  return apiJson({ ok: true, status, currentQuestion });
 }

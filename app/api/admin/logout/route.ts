@@ -1,8 +1,10 @@
-import { NextResponse } from "next/server";
 import { clearAdminSession } from "@/lib/admin-auth";
+import { apiJson, corsOptions } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 export async function POST() {
-  const response = NextResponse.json({ ok: true });
+  const response = apiJson({ ok: true });
   clearAdminSession(response);
   return response;
 }

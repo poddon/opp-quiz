@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
 import { isAdmin } from "@/lib/admin-auth";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeRoomCode } from "@/lib/api";
+
+export const OPTIONS = corsOptions;
 
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
-  if (!(await isAdmin())) return apiError("Требуется вход администратора", 401);
+  if (!(await isAdmin(request))) return apiError("Требуется вход администратора", 401);
   const code = normalizeRoomCode((await context.params).code);
   const body = await request.json().catch(() => ({}));
   const playerId = String(body.playerId ?? "");
@@ -24,5 +25,5 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     db.prepare(`INSERT INTO score_events (id, room_id, player_id, delta, reason, kind, created_at) VALUES (?, ?, ?, ?, ?, 'manual', ?)`)
       .bind(eventId, room.id, playerId, delta, reason, Date.now()),
   ]);
-  return NextResponse.json({ ok: true });
+  return apiJson({ ok: true });
 }

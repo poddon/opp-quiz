@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
 import { getD1 } from "@/db";
-import { apiError, normalizeRoomCode } from "@/lib/api";
+import { apiError, apiJson, corsOptions, normalizeRoomCode } from "@/lib/api";
 import { QUESTIONS } from "@/lib/questions";
+
+export const OPTIONS = corsOptions;
 
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
   const code = normalizeRoomCode((await context.params).code);
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     SELECT option_index AS optionIndex, is_correct AS isCorrect, points
     FROM answers WHERE id = ?
   `).bind(id).first<{ optionIndex: number; isCorrect: number; points: number }>();
-  return NextResponse.json({
+  return apiJson({
     correct: Boolean(saved?.isCorrect),
     points: Number(saved?.points ?? 0),
     optionIndex: Number(saved?.optionIndex ?? optionIndex),

@@ -42,10 +42,13 @@ export async function passwordMatches(value: string) {
   return difference === 0;
 }
 
-export async function createAdminSession(response: NextResponse) {
+export async function createAdminToken() {
   const expiresAt = Date.now() + 1000 * 60 * 60 * 12;
   const payload = `admin:${expiresAt}`;
-  const value = `${payload}.${await sign(payload)}`;
+  return `${payload}.${await sign(payload)}`;
+}
+
+export function setAdminSession(response: NextResponse, value: string) {
   const commonOptions = {
     httpOnly: true,
     path: "/",
@@ -82,9 +85,13 @@ export function clearAdminSession(response: NextResponse) {
   });
 }
 
-export async function isAdmin() {
-  const cookieStore = await cookies();
-  const value = cookieStore.get(COOKIE_NAME)?.value ?? cookieStore.get(EMBEDDED_COOKIE_NAME)?.value;
+export async function isAdmin(request?: Request) {
+  const authorization = request?.headers.get("authorization") ?? "";
+  const bearerValue = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+  const cookieStore = bearerValue ? null : await cookies();
+  const value = bearerValue || cookieStore?.get(COOKIE_NAME)?.value || cookieStore?.get(EMBEDDED_COOKIE_NAME)?.value;
   if (!value) return false;
   const splitAt = value.lastIndexOf(".");
   if (splitAt < 0) return false;
