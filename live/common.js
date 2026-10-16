@@ -14,8 +14,9 @@
       "wss://broker.hivemq.com:8884/mqtt",
       "wss://test.mosquitto.org:8081/mqtt"
     ],
-    defaultPts: 10,
-    firstBonus: 5
+    maxPts: 1000,                 // за верный ответ: от 500 (в последнюю секунду) до 1000 (мгновенно)
+    streakBonus: 100,             // +100 за каждый верный подряд, максимум +500
+    limit: (q) => (q.p === 15 ? 45 : 25)   // секунд на вопрос: расчётные — дольше
   };
   if (qs.get("broker")) CFG.brokers = qs.get("broker").split(",");
   CFG.topic = (s) => `${CFG.base}/${CFG.room}/${s}`;
@@ -159,40 +160,19 @@
       const q = window.qrcode(0, opts.ecc || "M"); q.addData(text); q.make();
       const n = q.getModuleCount(), m = 2; let d = "";
       for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
-      return `<svg viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR-код"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#172036"/></svg>`;
+      return `<svg viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR-код"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1B0B3B"/></svg>`;
     },
-    blockUrl: (id) => CFG.joinUrl + (id ? "?p=" + id : ""),
-    qid: (b, i) => b + "." + i,
-    totalQ: (b) => b.q.length,
-    maxPts: (b) => b.q.reduce((s, q) => s + (q.p || CFG.defaultPts), 0)
+    joinUrl: () => CFG.joinUrl,
+    qid: (b, i) => b + "." + i
   };
 
-  /* ---------- Маскот «Поддоша» — деревянный поддон ---------- */
-  function mascot(mood = "happy") {
-    const eyes = {
-      happy: `<ellipse cx="44" cy="44" rx="7" ry="9" fill="#172036"/><ellipse cx="76" cy="44" rx="7" ry="9" fill="#172036"/><circle cx="46" cy="40" r="2.6" fill="#fff"/><circle cx="78" cy="40" r="2.6" fill="#fff"/>`,
-      wow: `<circle cx="44" cy="43" r="9" fill="#fff" stroke="#172036" stroke-width="3"/><circle cx="76" cy="43" r="9" fill="#fff" stroke="#172036" stroke-width="3"/><circle cx="45" cy="44" r="4.5" fill="#172036"/><circle cx="77" cy="44" r="4.5" fill="#172036"/>`,
-      sleep: `<path d="M36 45q8 7 16 0M68 45q8 7 16 0" fill="none" stroke="#172036" stroke-width="3.5" stroke-linecap="round"/>`,
-      sad: `<ellipse cx="44" cy="46" rx="6" ry="7" fill="#172036"/><ellipse cx="76" cy="46" rx="6" ry="7" fill="#172036"/><path d="M34 34l14 5M86 34l-14 5" stroke="#172036" stroke-width="3.5" stroke-linecap="round"/>`
-    }[mood] || "";
-    const mouth = {
-      happy: `<path d="M50 58q10 11 20 0" fill="#ff7a6b" stroke="#172036" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>`,
-      wow: `<ellipse cx="60" cy="62" rx="6" ry="7" fill="#7a2a22" stroke="#172036" stroke-width="3"/>`,
-      sleep: `<path d="M54 61q6 3 12 0" fill="none" stroke="#172036" stroke-width="3.5" stroke-linecap="round"/>`,
-      sad: `<path d="M50 65q10 -9 20 0" fill="none" stroke="#172036" stroke-width="3.5" stroke-linecap="round"/>`
-    }[mood];
-    const zzz = mood === "sleep" ? `<g class="zzz" fill="#2A5BFF" font-family="Rubik,sans-serif" font-weight="900"><text x="98" y="22" font-size="16">z</text><text x="108" y="10" font-size="12">z</text></g>` : "";
-    return `<svg class="mascot mascot--${mood}" viewBox="0 0 120 104" aria-hidden="true">
-      <g stroke="#172036" stroke-width="3.5" stroke-linejoin="round">
-        <rect x="14" y="78" width="20" height="18" rx="4" fill="#C98545"/><rect x="50" y="78" width="20" height="18" rx="4" fill="#C98545"/><rect x="86" y="78" width="20" height="18" rx="4" fill="#C98545"/>
-        <rect x="6" y="70" width="108" height="11" rx="4" fill="#DE9A55"/>
-        <rect x="6" y="18" width="108" height="54" rx="10" fill="#F2B56B"/>
-      </g>
-      <path d="M10 36h100M10 54h100" stroke="#C98545" stroke-width="2.5" stroke-dasharray="14 6 30 8"/>
-      <circle cx="30" cy="57" r="6" fill="#ff8f80" opacity=".55"/><circle cx="90" cy="57" r="6" fill="#ff8f80" opacity=".55"/>
-      ${eyes}${mouth}${zzz}
-    </svg>`;
-  }
+  /* ---------- Фигуры вариантов ответа ---------- */
+  const SHAPES = [
+    { cls: "c0", svg: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 30 28H2z" fill="currentColor"/></svg>', name: "треугольник" },
+    { cls: "c1", svg: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 30 16 16 30 2 16z" fill="currentColor"/></svg>', name: "ромб" },
+    { cls: "c2", svg: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="currentColor"/></svg>', name: "круг" },
+    { cls: "c3", svg: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="4" width="24" height="24" rx="2" fill="currentColor"/></svg>', name: "квадрат" }
+  ];
 
   /* ---------- Звуки (WebAudio, без файлов) ---------- */
   let actx = null;
@@ -212,13 +192,42 @@
     bad() { this.tone([[300, .18], [220, .3]], "sawtooth", .08); },
     penalty() { this.tone([[392, .22], [370, .22], [349, .22], [330, .55]], "square", .07); },
     bonus() { this.tone([[523, .1], [659, .1], [784, .1], [1047, .3]]); },
-    join() { this.tone([[880, .08], [1175, .15]], "sine", .12); }
+    join() { this.tone([[880, .08], [1175, .15]], "sine", .12); },
+    tick(hi) { this.tone([[hi ? 1400 : 1000, .05]], "square", .05); },
+    gong() { this.tone([[196, .9]], "triangle", .25); this.tone([[392, .7]], "sine", .12); },
+    roll() { if (!actx) return; for (let i = 0; i < 18; i++) setTimeout(() => this.tone([[140 + i * 6, .06]], "square", .04 + i * .004), i * 70); setTimeout(() => this.tone([[523, .15], [659, .15], [784, .15], [1047, .6]], "triangle", .2), 1300); },
+    muted: false,
+    _mus: null,
+    music(kind) {
+      clearInterval(this._mus); this._mus = null;
+      if (!kind || !actx) return;
+      const bpm = kind === "question" ? 150 : 104, step = 60000 / bpm / 2;
+      const lobby = [[220, 0, 330], [0, 440, 0], [262, 0, 392], [0, 523, 0], [196, 0, 294], [0, 392, 0], [247, 0, 370], [0, 494, 440]];
+      const quest = [[110, 880], [0, 0], [110, 0], [0, 880], [131, 0], [0, 880], [98, 0], [0, 988]];
+      let i = 0;
+      this._mus = setInterval(() => {
+        if (this.muted || !actx) return;
+        const pat = kind === "question" ? quest : lobby, row = pat[i % pat.length]; i++;
+        const t = actx.currentTime;
+        row.forEach((f, k) => {
+          if (!f) return;
+          const o = actx.createOscillator(), g = actx.createGain();
+          o.type = kind === "question" ? (k === 0 ? "sawtooth" : "square") : (k === 0 ? "triangle" : "sine");
+          o.frequency.value = f;
+          const v = kind === "question" ? (k === 0 ? .05 : .025) : (k === 0 ? .07 : .04);
+          g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0005, t + step / 1000 * 1.6);
+          o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + step / 1000 * 1.7);
+        });
+      }, step);
+    }
   };
+  const _tone = SFX.tone.bind(SFX);
+  SFX.tone = (seq, type, vol) => { if (!SFX.muted) _tone(seq, type, vol); };
 
   /* ---------- Конфетти ---------- */
   function confetti(n = 60, origin) {
     const box = document.createElement("div"); box.className = "confetti"; document.body.appendChild(box);
-    const colors = ["#2A5BFF", "#FFC83D", "#22C58B", "#FF5B4A", "#F2B56B", "#9DB8FF"];
+    const colors = ["#E5484D", "#2F6FED", "#F5B400", "#2EAA4A", "#FFFFFF", "#B98BFF"];
     const ox = origin ? origin.x : innerWidth / 2, oy = origin ? origin.y : innerHeight / 3;
     for (let i = 0; i < n; i++) {
       const p = document.createElement("i");
@@ -230,5 +239,5 @@
     setTimeout(() => box.remove(), 1800);
   }
 
-  window.OPP = { CFG, Net, U, mascot, SFX, confetti };
+  window.OPP = { CFG, Net, U, SHAPES, SFX, confetti };
 })();

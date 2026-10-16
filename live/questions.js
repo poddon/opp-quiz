@@ -261,14 +261,14 @@ window.BLOCKS = [
   }
 ];
 
-/* Нарушения и бонусы для админа */
+/* Нарушения и бонусы для админа (очки — в масштабе игры: верный ответ до 1000) */
 window.VIOLATIONS = [
-  { id: "sleep", emoji: "😴", label: "Сон на паре", delta: -10 },
-  { id: "talk", emoji: "🗣️", label: "Болтовня", delta: -5 },
-  { id: "phone", emoji: "📱", label: "Телефон не по делу", delta: -5 },
-  { id: "late", emoji: "⏰", label: "Опоздание", delta: -5 },
-  { id: "cheat", emoji: "👀", label: "Списывание", delta: -15 },
-  { id: "food", emoji: "🍔", label: "Еда на паре", delta: -5 },
-  { id: "active", emoji: "🌟", label: "Активность", delta: 5 },
-  { id: "great", emoji: "🏆", label: "Отличный ответ у доски", delta: 10 }
+  { id: "sleep", emoji: "😴", label: "Сон на паре", delta: -300 },
+  { id: "talk", emoji: "🗣️", label: "Болтовня", delta: -200 },
+  { id: "phone", emoji: "📱", label: "Телефон не по делу", delta: -200 },
+  { id: "late", emoji: "⏰", label: "Опоздание", delta: -200 },
+  { id: "cheat", emoji: "👀", label: "Списывание", delta: -500 },
+  { id: "food", emoji: "🍔", label: "Еда на паре", delta: -200 },
+  { id: "active", emoji: "🌟", label: "Активность", delta: 200 },
+  { id: "great", emoji: "🏆", label: "Отличный ответ у доски", delta: 500 }
 ];

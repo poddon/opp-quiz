@@ -4,146 +4,80 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Битва коммерсантов</title>
-<meta name="theme-color" content="#2A5BFF">
+<meta name="theme-color" content="#1B0B3B">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&family=Rubik:wght@500;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=swap">
+<link rel="stylesheet" href="style.css?v=2">
 <style>
-  body { min-height: 100dvh; }
-  .wrap {
-    position: relative; z-index: 1; max-width: 560px; margin: 0 auto;
-    padding-top: max(14px, env(safe-area-inset-top, 0px)); padding-bottom: 40px;
-    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-    display: grid; gap: 18px;
-  }
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-  .brand { font-family: var(--f-display); font-weight: 900; font-size: 1rem; color: var(--blue); letter-spacing: .02em; }
+  html, body { height: 100%; }
+  body { overflow-x: hidden; }
+  .app { position: relative; z-index: 1; min-height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: max(10px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
+  .top b { font-weight: 900; font-size: .95rem; }
+  .main { display: flex; flex-direction: column; min-height: 0;
+    padding: 6px max(14px, env(safe-area-inset-right, 0px)) 14px max(14px, env(safe-area-inset-left, 0px)); }
+  .bottom { display: flex; align-items: center; gap: 10px; background: rgba(0, 0, 0, .35);
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  .bottom .nm { flex: 1; min-width: 0; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bottom .sc { font-weight: 900; font-size: 1.2rem; background: #fff; color: var(--ink); padding: .2em .7em; border-radius: 8px; font-variant-numeric: tabular-nums; }
+  .bottom .sc.bump { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1); }
 
-  /* вход */
-  .hero { text-align: center; display: grid; justify-items: center; gap: 8px; padding-top: 6px; }
-  .hero .mascot { width: 150px; }
-  .hero h1 { font-size: clamp(2rem, 9vw, 2.8rem); font-weight: 900; line-height: .95; color: var(--ink); }
-  .hero h1 span { color: var(--blue); display: block; }
-  .hero p { margin: 0; color: var(--muted); font-weight: 700; }
-  .card { padding: 20px; display: grid; gap: 14px; }
-  .blockchip { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: var(--sky); border-radius: 14px; border: 2.5px solid var(--ink); }
-  .blockchip .em { font-size: 1.9rem; }
-  .blockchip b { font-family: var(--f-display); display: block; font-size: 1.05rem; }
-  .blockchip small { font-weight: 800; color: var(--blue-d); }
+  .center { flex: 1; display: grid; place-content: center; justify-items: center; text-align: center; gap: 14px; padding: 10px 6px; }
+  .center h1 { font-size: clamp(1.8rem, 8vw, 2.6rem); }
+  .center p { margin: 0; color: var(--dim); font-weight: 700; max-width: 30ch; }
+  .big { font-size: 4.2rem; line-height: 1; }
+  .logo { font-size: clamp(2rem, 10vw, 2.8rem); font-weight: 900; line-height: .95; text-align: center; }
+  .logo span { display: block; color: var(--gold); }
+  .join { width: min(100%, 400px); padding: 22px; display: grid; gap: 14px; margin-top: 8px; }
+  .spin { width: 46px; height: 46px; border-radius: 50%; border: 6px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: sp 1s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
 
-  /* игровая шапка */
-  .me { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
-  .me .who { min-width: 0; flex: 1; }
-  .me .who b { display: block; font-family: var(--f-display); font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .me .who small { color: var(--muted); font-weight: 800; }
-  .score { font-family: var(--f-display); font-weight: 900; font-size: 1.6rem; background: var(--sun); border: var(--line) solid var(--ink); border-radius: 14px; padding: 2px 12px; box-shadow: var(--shadow-s); font-variant-numeric: tabular-nums; }
-  .score.bump { animation: popin .5s cubic-bezier(.2, 1.6, .4, 1); }
+  .qhead { display: grid; gap: 10px; margin-bottom: 12px; }
+  .qtext { background: #fff; color: var(--ink); border-radius: 10px; padding: 12px 14px; font-weight: 800; font-size: 1.02rem; line-height: 1.35; box-shadow: var(--lift); }
+  .tbar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .2); overflow: hidden; }
+  .tbar i { display: block; height: 100%; background: #fff; border-radius: 99px; }
+  .tline { display: flex; justify-content: space-between; font-weight: 800; font-size: .85rem; color: var(--dim); }
+  .tiles { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 280px; }
+  .tiles.two { grid-template-columns: 1fr; }
+  .tiles .tile { flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 12px 10px; font-size: 1rem; }
+  .tiles .tile .sh { width: 2.6em; height: 2.6em; }
+  .tiles .tile:active { transform: scale(.96); }
+  .tiles.short .tile { font-size: 1.15rem; }
 
-  .blockhead { display: grid; gap: 4px; }
-  .blockhead h2 { font-size: 1.5rem; font-weight: 900; }
-  .dots { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .dots i { width: 22px; height: 10px; border-radius: 6px; border: 2px solid var(--ink); background: var(--white); }
-  .dots i.cur { background: var(--sun); }
-  .dots i.ok { background: var(--mint); }
-  .dots i.no { background: var(--tomato); }
-  .dots i.wait { background: var(--sky); }
+  .result { flex: 1; margin: -6px -14px -14px; display: grid; place-content: center; justify-items: center; text-align: center; gap: 12px; padding: 20px; }
+  .result.ok { background: var(--good); }
+  .result.no { background: var(--bad); }
+  .result.none { background: rgba(0, 0, 0, .25); }
+  .result h1 { font-size: 2.4rem; }
+  .result .ic { width: 96px; height: 96px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-size: 3.4rem; font-weight: 900; box-shadow: var(--lift); }
+  .result.ok .ic { color: var(--good); } .result.no .ic { color: var(--bad); }
+  .result .gain { font-size: 2rem; font-weight: 900; background: rgba(0, 0, 0, .22); padding: .15em .7em; border-radius: 10px; }
+  .result .note { background: rgba(0, 0, 0, .2); border-radius: 10px; padding: 10px 14px; font-weight: 700; max-width: 34ch; }
+  .rank { font-weight: 800; color: rgba(255, 255, 255, .9); }
 
-  .qcard { padding: 20px; display: grid; gap: 14px; position: relative; }
-  .qmeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .qpts { font-family: var(--f-display); font-weight: 900; background: var(--blue); color: var(--white); border-radius: 999px; padding: 2px 10px; border: 2px solid var(--ink); }
-  .qtext { font-size: 1.2rem; font-weight: 800; line-height: 1.35; }
-  .opts { display: grid; gap: 10px; }
-  .opt {
-    display: flex; gap: 12px; align-items: center; text-align: left; width: 100%;
-    padding: 12px 14px; border: var(--line) solid var(--ink); border-radius: 14px; background: var(--white);
-    box-shadow: var(--shadow-s); font-weight: 800; font-size: 1.02rem; line-height: 1.3;
-    transition: transform .12s, box-shadow .12s, background .2s;
-  }
-  .opt:active { transform: translate(3px, 3px); box-shadow: none; }
-  .opt .L { flex: none; width: 2em; height: 2em; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-display); font-weight: 900; border: 2.5px solid var(--ink); background: var(--paper); }
-  .opt:nth-child(1) .L { background: #FFE08A; } .opt:nth-child(2) .L { background: #BFD3FF; }
-  .opt:nth-child(3) .L { background: #B6F0D8; } .opt:nth-child(4) .L { background: #FFC7BF; }
-  .opts.locked .opt { pointer-events: none; }
-  .opt.picked { background: var(--sky); }
-  .opt.right { background: var(--mint); color: var(--ink); }
-  .opt.wrong { background: var(--tomato); color: var(--white); }
-  .opts.locked .opt:not(.right):not(.wrong):not(.picked) { opacity: .55; }
-  .verdict { padding: 14px; border-radius: 14px; border: 2.5px solid var(--ink); font-weight: 700; line-height: 1.4; }
-  .verdict b { font-family: var(--f-display); font-size: 1.2rem; display: block; margin-bottom: 2px; }
-  .verdict.ok { background: #D7F7EA; } .verdict.no { background: #FFE1DC; } .verdict.wait { background: var(--paper); }
-  .float {
-    position: absolute; right: 18px; top: -10px; font-family: var(--f-display); font-weight: 900; font-size: 2.2rem;
-    color: var(--mint); -webkit-text-stroke: 2px var(--ink); animation: floatup 1.4s ease-out forwards; pointer-events: none;
-  }
-  @keyframes floatup { from { transform: translateY(20px) scale(.6); opacity: 0; } 20% { opacity: 1; transform: translateY(0) scale(1.15); } to { transform: translateY(-50px); opacity: 0; } }
-  .spinner { display: inline-block; width: 1em; height: 1em; border: 3px solid var(--ink); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .center { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 26px 20px; }
-  .center .mascot { width: 130px; }
-  .center h2 { font-size: 1.7rem; font-weight: 900; }
-  .bigstat { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .bigstat div { padding: 10px 16px; border: 2.5px solid var(--ink); border-radius: 14px; background: var(--paper); min-width: 100px; }
-  .bigstat b { display: block; font-family: var(--f-display); font-size: 1.8rem; font-weight: 900; }
-  .bigstat small { font-weight: 800; color: var(--muted); }
-  .muted { color: var(--muted); font-weight: 700; margin: 0; }
-  .linkbtn { background: none; border: 0; text-decoration: underline; font-weight: 800; color: var(--muted); padding: 6px; }
-
-  /* оповещение о штрафе/бонусе */
-  .alert { position: fixed; inset: 0; z-index: 600; display: grid; place-items: center; background: rgba(23, 32, 54, .55); padding: 20px; }
-  .alert .box { width: min(100%, 380px); padding: 24px; text-align: center; display: grid; gap: 8px; justify-items: center; }
+  .alert { position: fixed; inset: 0; z-index: 800; display: grid; place-items: center; padding: 20px; background: rgba(10, 4, 25, .7); }
+  .alert .box { width: min(100%, 380px); padding: 26px 22px; text-align: center; display: grid; gap: 10px; justify-items: center; }
   .alert .em { font-size: 4rem; line-height: 1; }
-  .alert .delta { font-family: var(--f-display); font-weight: 900; font-size: 3.4rem; -webkit-text-stroke: 2px var(--ink); }
-  .alert.neg .box { background: #FFE1DC; } .alert.neg .delta { color: var(--tomato); }
-  .alert.pos .box { background: #D7F7EA; } .alert.pos .delta { color: var(--mint); }
-  .alert h3 { font-size: 1.4rem; }
-  .alert .mascot { width: 90px; }
+  .alert .d { font-size: 3.2rem; font-weight: 900; }
+  .alert.neg .d { color: var(--bad); } .alert.pos .d { color: var(--good); }
+  .alert p { margin: 0; color: var(--ink-2); font-weight: 700; }
+  .linkbtn { background: none; color: var(--dim); text-decoration: underline; font-weight: 700; font-size: .85rem; padding: 6px; }
 </style>
 </head>
 <body>
-<div class="shavings" aria-hidden="true"></div>
-<div class="wrap">
-  <div class="topbar">
-    <span class="brand">ОПП · Модуль 3</span>
-    <span class="pill" id="net"><span class="dot" id="netdot"></span><span id="nettxt">подключаемся…</span></span>
-  </div>
-
-  <!-- Вход -->
-  <section id="v-join" hidden>
-    <div class="hero">
-      <div class="bob" id="joinMascot"></div>
-      <h1>Битва <span>коммерсантов</span></h1>
-      <p>Отвечай на вопросы — зарабатывай очки</p>
-    </div>
-    <form class="card sticker" id="joinForm" autocomplete="on" style="margin-top:16px">
-      <div class="blockchip" id="joinBlock" hidden></div>
-      <div class="field"><label for="fam">Фамилия</label><input id="fam" name="family-name" autocomplete="family-name" required maxlength="30" placeholder="Например, Иванов"></div>
-      <div class="field"><label for="nam">Имя</label><input id="nam" name="given-name" autocomplete="given-name" required maxlength="30" placeholder="Например, Пётр"></div>
-      <button class="btn btn--blue" type="submit" id="joinBtn">Поехали! 🚀</button>
-      <p class="muted" style="font-size:.85rem;text-align:center">Пиши настоящие фамилию и имя — по ним преподаватель видит рейтинг</p>
-    </form>
-  </section>
-
-  <!-- Игра -->
-  <section id="v-game" hidden style="display:grid;gap:16px">
-    <div class="me sticker">
-      <div class="avatar" id="meAv"></div>
-      <div class="who"><b id="meName"></b><small id="meRank">в игре</small></div>
-      <div class="score" id="meScore">0</div>
-    </div>
-    <div id="stage"></div>
-    <div style="text-align:center"><button class="linkbtn" id="logout" type="button">Это не я — сменить имя</button></div>
-  </section>
+<div class="floaters" aria-hidden="true"></div>
+<div class="app">
+  <div class="top"><b id="topL">Битва коммерсантов</b><span class="pill"><span class="dot" id="netdot"></span><span id="nettxt">подключаемся…</span></span></div>
+  <main class="main" id="main"></main>
+  <div class="bottom" id="bottom" hidden><div class="avatar" id="meAv"></div><span class="nm" id="meName"></span><span class="sc" id="meScore">0</span></div>
 </div>
-
-<div class="alert" id="alert" hidden>
-  <div class="box sticker pop-in" id="alertBox"></div>
-</div>
+<div class="alert" id="alert" hidden><div class="box card pop" id="alertBox"></div></div>
 <div class="toast-stack" id="toasts"></div>
 
 <script src="vendor/qrcode.js"></script>
-<script src="questions.js?v=1"></script>
-<script src="common.js?v=1"></script>
-<script src="student.js?v=1"></script>
+<script src="questions.js?v=2"></script>
+<script src="common.js?v=2"></script>
+<script src="student.js?v=2"></script>
 </body>
 </html>

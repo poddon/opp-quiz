@@ -1,431 +1,496 @@
 (function () {
   "use strict";
-  const { CFG, Net, U, mascot, SFX, confetti } = window.OPP;
+  const { CFG, Net, U, SHAPES, SFX, confetti } = window.OPP;
   const { $, $$, esc } = U;
   const BLOCKS = window.BLOCKS, VIOL = window.VIOLATIONS;
   const byId = Object.fromEntries(BLOCKS.map((b) => [String(b.id), b]));
-
   const T_ST = CFG.topic("st"), T_UP = CFG.topic("up"), T_ADM = CFG.topic("adm");
   const T_PL = (pid) => CFG.topic("pl/" + pid);
+  const isPult = new URLSearchParams(location.search).has("pult");
+  const fmtD = (d) => (d < 0 ? "−" + Math.abs(d) : "+" + d);
+  const pts = (n) => n + " " + U.plural(Math.abs(n), "очко", "очка", "очков");
 
-  let role = null, password = null, hkey = null, net = null;
+  let password = null, hkey = null, net = null;
 
-  $("#loginMascot").innerHTML = mascot("wow");
-  $("#hostMascot").innerHTML = mascot("happy");
-  $("#emptyMascot").innerHTML = mascot("sleep");
+  // фон
+  const fl = document.querySelector(".floaters");
+  for (let i = 0; i < 8; i++) { const e = document.createElement("i"); e.innerHTML = SHAPES[i % 4].svg; e.style.left = (i * 12.5 + Math.random() * 6) + "%"; e.style.animationDelay = (-i * 3.5) + "s"; e.style.animationDuration = 24 + i * 3 + "s"; fl.appendChild(e); }
 
-  // ======================= ВХОД =======================
-  const sess = (() => { try { return JSON.parse(sessionStorage.getItem("opp.adm") || "null"); } catch (_) { return null; } })();
-  if (sess && sess.pw) { password = sess.pw; checkPw(password).then((ok) => ok ? (sess.role ? start(sess.role) : showRoles()) : null); }
+  function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("#toasts").appendChild(d); setTimeout(() => d.remove(), 2600); }
 
-  async function checkPw(pw) { return (await U.sha256hex("opp-login|" + pw)) === CFG.loginHash; }
+  // ============================ ВХОД ============================
+  if (isPult) $("#loginSub").textContent = "Пульт ведущего (телефон)";
+  async function okPw(pw) { return (await U.sha256hex("opp-login|" + pw)) === CFG.loginHash; }
+  (async () => {
+    const saved = U.store.get("opp.adm2", null);
+    if (saved && await okPw(saved)) { password = saved; start(); }
+  })();
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault(); SFX.unlock();
-    const lg = $("#lg").value.trim().toLowerCase(), pw = $("#pw").value;
-    if (lg !== "admin" || !(await checkPw(pw))) { $("#lgErr").textContent = "Неверный логин или пароль"; $("#loginForm").classList.remove("shake"); void $("#loginForm").offsetWidth; $("#loginForm").classList.add("shake"); return; }
-    password = pw; saveSess(null); showRoles();
+    if ($("#lg").value.trim().toLowerCase() !== "admin" || !(await okPw($("#pw").value))) {
+      $("#lgErr").textContent = "Неверный логин или пароль";
+      const f = $("#loginForm"); f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake"); return;
+    }
+    password = $("#pw").value; U.store.set("opp.adm2", password); start();
   });
-  function saveSess(r) { try { sessionStorage.setItem("opp.adm", JSON.stringify({ pw: password, role: r })); } catch (_) {} }
-  function showRoles() {
-    $("#loginForm").hidden = true; $("#roleCard").hidden = false;
-    $$(".role").forEach((b) => b.onclick = () => { SFX.unlock(); saveSess(b.dataset.role); start(b.dataset.role); });
-  }
-  function logout() { try { sessionStorage.removeItem("opp.adm"); } catch (_) {} location.reload(); }
+  function logout() { U.store.del("opp.adm2"); location.href = location.pathname + (isPult ? "?pult=1" : ""); }
 
-  async function start(r) {
-    role = r; hkey = await U.hmacKey(password);
+  async function start() {
+    hkey = await U.hmacKey(password);
     $("#v-login").hidden = true;
     net = new Net(CFG.brokers);
-    if (role === "host") startHost(); else startPult();
+    isPult ? startPult() : startHost();
   }
 
-  // shavings
-  const sh = $(".shavings");
-  for (let i = 0; i < 8; i++) { const s = document.createElement("span"); s.style.left = Math.random() * 100 + "%"; s.style.animationDuration = 16 + Math.random() * 14 + "s"; s.style.animationDelay = -Math.random() * 20 + "s"; sh.appendChild(s); }
-
-  function toast(text) { const t = document.createElement("div"); t.className = "toast sticker"; t.textContent = text; $("#toasts").appendChild(t); setTimeout(() => t.remove(), 2600); }
-  function fmtD(d) { return d < 0 ? "−" + Math.abs(d) : "+" + d; }
-
-  // =================== МОДАЛКА ИГРОКА (общая) ===================
-  function openPlayer(p, { onAdj, onDelete, history }) {
+  // ============== окно ученика: штрафы и бонусы (общее для экрана и пульта) ==============
+  function openPlayer(p, onAdj, extra = {}) {
     const m = $("#modal"), box = $("#modalBox");
-    const neg = VIOL.filter((v) => v.delta < 0), pos = VIOL.filter((v) => v.delta > 0);
+    const vb = (v) => `<button class="vb ${v.delta > 0 ? "pos" : ""}" type="button" data-v="${v.id}"><span class="e">${v.emoji}</span>${esc(v.label)}<span class="d">${fmtD(v.delta)}</span></button>`;
     box.innerHTML = `
-      <div class="mhead"><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div>
-        <div><b>${esc(p.n)}</b><span class="muted" style="font-weight:800;color:var(--muted)">${p.s} ${U.plural(p.s, "очко", "очка", "очков")}</span></div>
-        <button class="x" type="button" id="mx" aria-label="Закрыть">✕</button></div>
-      <span class="eyebrow">Нарушения</span>
-      <div class="vgrid">${neg.map((v) => `<button class="vbtn" type="button" data-v="${v.id}"><span class="e">${v.emoji}</span>${esc(v.label)}<span class="d">${fmtD(v.delta)}</span></button>`).join("")}</div>
-      <span class="eyebrow">Бонусы</span>
-      <div class="vgrid">${pos.map((v) => `<button class="vbtn pos" type="button" data-v="${v.id}"><span class="e">${v.emoji}</span>${esc(v.label)}<span class="d">${fmtD(v.delta)}</span></button>`).join("")}</div>
-      <span class="eyebrow">Своё значение</span>
-      <div class="custom"><input id="cD" type="number" step="1" value="5" aria-label="Очки"><input id="cR" type="text" maxlength="60" placeholder="Причина, например «вышел к доске»" aria-label="Причина"></div>
-      <div class="mfoot"><button class="btn btn--sm btn--red" type="button" id="cMinus">− Снять</button><button class="btn btn--sm" type="button" id="cPlus">+ Начислить</button></div>
-      ${history && history.length ? `<span class="eyebrow">История</span><div class="hist">${history.slice().reverse().map((e) => `<div><span>${e.e || ""} ${esc(e.r)}</span><b>${fmtD(e.d)}</b></div>`).join("")}</div>` : ""}
-      ${onDelete ? `<div class="mfoot"><span></span><button class="btn btn--sm btn--ghost" type="button" id="mDel">Убрать из рейтинга</button></div>` : ""}`;
+      <div class="mhead"><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div><div><b>${esc(p.n)}</b><small>${pts(p.s)}${p.r ? " · " + p.r + " место" : ""}</small></div><button class="x" type="button" id="mx" aria-label="Закрыть">✕</button></div>
+      <span class="lbl">Нарушение</span><div class="vgrid">${VIOL.filter((v) => v.delta < 0).map(vb).join("")}</div>
+      <span class="lbl">Бонус</span><div class="vgrid">${VIOL.filter((v) => v.delta > 0).map(vb).join("")}</div>
+      <span class="lbl">Своё значение</span>
+      <div class="custom"><input id="cD" type="number" step="50" min="0" value="100" aria-label="Очки"><input id="cR" type="text" maxlength="60" placeholder="Причина" aria-label="Причина"></div>
+      <div class="mrow"><button class="btn btn--sm btn--red" type="button" id="cM">− Снять</button><button class="btn btn--sm btn--go" type="button" id="cP">+ Начислить</button></div>
+      ${extra.history && extra.history.length ? `<span class="lbl">История</span><div class="hist">${extra.history.slice().reverse().map((e) => `<div><span>${e.e || ""} ${esc(e.r)}</span><b>${fmtD(e.d)}</b></div>`).join("")}</div>` : ""}
+      ${extra.onDelete ? `<div class="mrow"><span></span><button class="btn btn--sm btn--glass" style="color:var(--ink);background:#F0EBFA" type="button" id="mDel">Убрать из игры</button></div>` : ""}`;
     m.hidden = false;
     const close = () => { m.hidden = true; };
-    $("#mx").onclick = close;
-    m.onclick = (e) => { if (e.target === m) close(); };
-    box.querySelectorAll(".vbtn").forEach((b) => b.onclick = () => { const v = VIOL.find((x) => x.id === b.dataset.v); onAdj(v.delta, v.label, v.emoji); close(); });
-    const custom = (sign) => { const d = Math.abs(parseInt($("#cD").value, 10) || 0); if (!d) return; const r = $("#cR").value.trim() || (sign < 0 ? "Нарушение" : "Бонус"); onAdj(sign * d, r, sign < 0 ? "⚠️" : "⭐"); close(); };
-    $("#cMinus").onclick = () => custom(-1); $("#cPlus").onclick = () => custom(1);
-    if (onDelete) $("#mDel").onclick = (ev) => {
-      const b = ev.currentTarget;
-      if (b.dataset.sure) { onDelete(); close(); } else { b.dataset.sure = 1; b.textContent = "Точно убрать? Нажмите ещё раз"; b.classList.add("btn--red"); }
-    };
+    $("#mx").onclick = close; m.onclick = (e) => { if (e.target === m) close(); };
+    box.querySelectorAll(".vb").forEach((b) => b.onclick = () => { const v = VIOL.find((x) => x.id === b.dataset.v); onAdj(v.delta, v.label, v.emoji); close(); });
+    const custom = (sg) => { const d = Math.abs(parseInt($("#cD").value, 10) || 0); if (!d) return; onAdj(sg * d, $("#cR").value.trim() || (sg < 0 ? "Нарушение" : "Бонус"), sg < 0 ? "⚠️" : "⭐"); close(); };
+    $("#cM").onclick = () => custom(-1); $("#cP").onclick = () => custom(1);
+    if (extra.onDelete) $("#mDel").onclick = (ev) => { const b = ev.currentTarget; if (b.dataset.sure) { extra.onDelete(); close(); } else { b.dataset.sure = 1; b.textContent = "Точно? Нажмите ещё раз"; } };
   }
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#modal").hidden = true; });
 
-  // =========================== БОЛЬШОЙ ЭКРАН ===========================
+  // ============================ ВЕДУЩИЙ (большой экран) ============================
   function startHost() {
     const HOST_ID = "h" + U.mid(), started = Date.now();
-    const LS = "opp.host." + CFG.room;
-    const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, closed: [], active: null, feed: [], first: {} });
+    const LS = "opp.host2." + CFG.room;
+    const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, done: {}, g: { phase: "lobby", block: null, qi: 0, qStart: 0, limit: 25, prev: {}, prevOrder: [] } });
     let S = U.store.get(LS, null) || fresh();
-    let saveT = null; const save = () => { clearTimeout(saveT); saveT = setTimeout(() => U.store.set(LS, S), 250); };
-    let presenting = U.store.get("opp.presenting", false);
-    const usedNonces = new Map();
-
+    let saveT = 0; const save = () => { clearTimeout(saveT); saveT = setTimeout(() => U.store.set(LS, S), 200); };
+    const usedN = new Map();
+    SFX.muted = U.store.get("opp.muted", false);
+    $("#bSound").textContent = SFX.muted ? "🔇" : "🔊";
     $("#v-host").hidden = false;
-    document.body.classList.toggle("presenting", presenting);
 
-    net.onStatus((on, tot) => {
-      $("#hNetDot").classList.toggle("on", on > 0);
-      $("#hNet").textContent = on ? `на связи ${on}/${tot}` : "нет связи";
-      if (on) { broadcast(true); }
-    });
+    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = on ? `связь ${on}/${tot}` : "нет связи"; if (on) broadcast(true); });
     net.sub(T_UP); net.sub(T_ADM); net.sub(T_ST);
-
-    net.on(async (topic, msg) => {
-      if (topic === T_UP) handleUp(msg);
-      else if (topic === T_ADM) handleAdm(msg);
-      else if (topic === T_ST) {
-        if (msg.host && msg.host !== HOST_ID && msg.ts > started + 3000) showBanner("Открыт ещё один большой экран! Оставьте только один, иначе очки разойдутся.");
-      }
+    net.on((topic, m) => {
+      if (topic === T_UP) onUp(m);
+      else if (topic === T_ADM) onAdm(m);
+      else if (topic === T_ST && m.host && m.host !== HOST_ID && m.ts > started + 3000) banner("Открыт второй экран ведущего! Закройте лишний, иначе очки разойдутся.");
     });
 
     // ---------- модель ----------
+    const G = () => S.g;
+    const curBlock = () => (G().block ? byId[G().block] : null);
+    const curQ = () => { const b = curBlock(); return b ? b.q[G().qi] : null; };
+    const curQid = () => U.qid(G().block, G().qi);
     function ranked() {
       const arr = Object.values(S.players).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "ru"));
-      let r = 0, prev = null; arr.forEach((p, i) => { if (p.score !== prev) { r = i + 1; prev = p.score; } p._rank = r; });
+      let r = 0, prev = null; arr.forEach((p, i) => { if (p.score !== prev) { r = i + 1; prev = p.score; } p._r = r; });
       return arr;
     }
     function ensure(name, pid) {
-      const key = U.normName(name);
-      if (!key || key.length < 3) return null;
+      const key = U.normName(name); if (!key || key.length < 3) return null;
       let p = S.players[key];
       if (!p) {
         if (Object.keys(S.players).length >= 300) return null;
-        p = S.players[key] = { key, name: U.cleanName(name).slice(0, 60), score: 0, ans: {}, ev: [], pids: [], joined: Date.now() };
-        feed({ ty: "join", k: key, n: p.name, e: "👋", r: "в игре" });
-        SFX.join();
+        p = S.players[key] = { key, name: U.cleanName(name).slice(0, 60), score: 0, ans: {}, ev: [], pids: [], streak: 0 };
+        SFX.join(); newName = key;
       }
-      if (pid && typeof pid === "string" && pid.length < 40) {
-        if (!p.pids.includes(pid)) { p.pids.push(pid); if (p.pids.length > 4) p.pids.shift(); }
-        S.pidKey[pid] = key;
-      }
-      p.seen = Date.now();
+      if (pid && typeof pid === "string" && pid.length < 40) { if (!p.pids.includes(pid)) { p.pids.push(pid); if (p.pids.length > 4) p.pids.shift(); } S.pidKey[pid] = key; }
       return p;
     }
-    function feed(item) { item.t = Date.now(); item.id = U.mid(); S.feed.push(item); S.feed = S.feed.slice(-30); renderTicker(item); }
+    let newName = null;
 
-    function handleUp(m) {
+    function onUp(m) {
       if (!m || typeof m !== "object" || typeof m.name !== "string") return;
-      const p = ensure(m.name, m.pid);
-      if (!p) return;
-      if (m.ty === "ans" && typeof m.q === "string") {
-        const [bid, qi] = m.q.split("."); const b = byId[bid]; const q = b && b.q[+qi];
-        const a = Number.isInteger(m.a) ? m.a : -1;
-        if (q && a >= 0 && a < q.o.length && !p.ans[m.q] && !S.closed.includes(b.id)) {
-          const ok = a === q.c; let pts = ok ? (q.p || CFG.defaultPts) : 0, first = false;
-          if (ok && !S.first[m.q]) { S.first[m.q] = p.key; first = true; pts += CFG.firstBonus; }
-          p.ans[m.q] = { a, ok, pts, first };
-          p.score += pts;
-          if (first) feed({ ty: "first", k: p.key, n: p.name, e: "⚡", r: `первым верно ответил(а) — слайд ${bid}, вопрос ${+qi + 1}` });
-          if (pts) flashRow(p.key, pts);
+      const p = ensure(m.name, m.pid); if (!p) return;
+      if (m.ty === "ans" && G().phase === "question" && m.q === curQid() && !p.ans[m.q]) {
+        const q = curQ(), a = Number.isInteger(m.a) ? m.a : -1;
+        const el = (Date.now() - G().qStart) / 1000;
+        if (a >= 0 && a < q.o.length && el <= G().limit + 1.5) {
+          const ok = a === q.c;
+          const base = ok ? Math.round(CFG.maxPts * (1 - 0.5 * Math.min(1, el / G().limit))) : 0;
+          p.ans[m.q] = { a, ok, base, t: Math.round(el * 10) / 10 };
+          const n = answeredCount();
+          if (n >= Object.keys(S.players).length) setTimeout(() => { if (G().phase === "question") reveal(); }, 700);
         }
       }
-      save(); publishPlayer(p); broadcast(); renderAll();
+      save(); publishPlayer(p); broadcast(); render();
     }
+    const answeredCount = () => Object.values(S.players).filter((p) => p.ans[curQid()]).length;
 
     function adjust(key, d, r, e) {
       const p = S.players[key]; if (!p || !d) return;
-      d = Math.max(-1000, Math.min(1000, Math.round(d)));
+      d = Math.max(-5000, Math.min(5000, Math.round(d)));
       p.score += d;
-      const ev = { id: "e" + U.mid(), d, r: String(r).slice(0, 60), e: e || "", t: Date.now() };
+      const ev = { id: "e" + U.mid(), d, r: String(r || "").slice(0, 60), e: e || "", t: Date.now() };
       p.ev.push(ev); p.ev = p.ev.slice(-30);
-      feed({ ty: d < 0 ? "neg" : "pos", k: key, n: p.name, e, r, d });
-      save(); publishPlayer(p); broadcast(); renderAll();
-      flashRow(key, d);
-      eventPop(p, ev);
+      save(); publishPlayer(p); broadcast(true); render(); eventPop(p, ev);
+      if (!$("#ov").hidden && ovKind) openOverlay(ovKind);
     }
     function removePlayer(key) {
       const p = S.players[key]; if (!p) return;
-      delete S.players[key];
-      for (const pid in S.pidKey) if (S.pidKey[pid] === key) delete S.pidKey[pid];
-      save(); broadcast(); renderAll(); toast("Убран из рейтинга: " + p.name);
+      delete S.players[key]; for (const pid in S.pidKey) if (S.pidKey[pid] === key) delete S.pidKey[pid];
+      save(); broadcast(true); render(); if (ovKind) openOverlay(ovKind); toast("Убран из игры: " + p.name);
     }
-    function setActive(id) { S.active = id ? +id : null; save(); broadcast(); renderAll(); }
-    function setClosed(id, closed) { id = +id; S.closed = S.closed.filter((x) => x !== id); if (closed) S.closed.push(id); save(); broadcast(); renderAll(); }
+
+    // ---------- ход игры ----------
+    let qTimer = 0;
+    function nextUndone() { return BLOCKS.find((b) => !S.done[b.id]) || BLOCKS[0]; }
+    function nextLabel() {
+      const g = G(), b = curBlock();
+      switch (g.phase) {
+        case "lobby": return `Начать: слайд ${nextUndone().id} ▶`;
+        case "intro": return "Первый вопрос ▶";
+        case "question": return "Показать ответ ▶";
+        case "reveal": return "Рейтинг ▶";
+        case "board": return g.qi + 1 < b.q.length ? "Следующий вопрос ▶" : "Итоги практики ▶";
+        case "podium": return "К выбору практики ▶";
+      }
+      return "Далее ▶";
+    }
+    function next() {
+      const g = G();
+      if (g.phase === "lobby") return openBlock(nextUndone().id);
+      if (g.phase === "intro") return startQuestion(0);
+      if (g.phase === "question") return reveal();
+      if (g.phase === "reveal") return toBoard();
+      if (g.phase === "board") return g.qi + 1 < curBlock().q.length ? startQuestion(g.qi + 1) : toPodium();
+      if (g.phase === "podium") { S.done[g.block] = true; return toLobby(); }
+    }
+    function setPhase(ph) { G().phase = ph; save(); broadcast(true); render(true); music(); }
+    function toLobby() { clearInterval(qTimer); G().block = null; setPhase("lobby"); }
+    function openBlock(id) { if (!byId[id]) return; clearInterval(qTimer); Object.assign(G(), { block: +id, qi: 0 }); setPhase("intro"); }
+    function startQuestion(i) {
+      const g = G(), b = curBlock();
+      g.qi = i; g.qStart = Date.now(); g.limit = CFG.limit(b.q[i]);
+      g.prev = Object.fromEntries(Object.values(S.players).map((p) => [p.key, p.score]));
+      g.prevOrder = ranked().map((p) => p.key);
+      setPhase("question");
+      runTimer();
+    }
+    function runTimer() {
+      clearInterval(qTimer);
+      let lastSec = -1;
+      qTimer = setInterval(() => {
+        const g = G(); if (g.phase !== "question") return clearInterval(qTimer);
+        const left = g.limit - (Date.now() - g.qStart) / 1000;
+        const sec = Math.max(0, Math.ceil(left));
+        if (sec !== lastSec) { lastSec = sec; updTimer(sec); if (sec <= 5 && sec > 0) SFX.tick(sec <= 3); }
+        if (left <= -0.3) reveal();
+      }, 200);
+    }
+    function reveal() {
+      const g = G(); if (g.phase !== "question") return;
+      clearInterval(qTimer);
+      const qid = curQid();
+      Object.values(S.players).forEach((p) => {
+        const a = p.ans[qid];
+        if (a && a.ok) { p.streak = (p.streak || 0) + 1; a.pts = a.base + Math.min(500, CFG.streakBonus * (p.streak - 1)); p.score += a.pts; }
+        else { p.streak = 0; if (a) a.pts = 0; }
+      });
+      SFX.music(null); SFX.gong();
+      setPhase("reveal");
+      Object.values(S.players).forEach(publishPlayer);
+    }
+    function toBoard() { setPhase("board"); }
+    function toPodium() { setPhase("podium"); SFX.roll(); setTimeout(() => confetti(180), 1500); }
+    function music() {
+      const ph = G().phase;
+      SFX.music(ph === "question" ? "question" : ph === "lobby" || ph === "intro" ? "lobby" : null);
+    }
 
     // ---------- рассылка ----------
-    function playerPayload(p) {
-      return { ts: Date.now(), sid: S.sid, key: p.key, name: p.name, score: p.score, rank: p._rank, of: Object.keys(S.players).length, ans: p.ans, ev: p.ev.slice(-8) };
-    }
     function publishPlayer(p) {
       ranked();
-      const pl = playerPayload(p); p._pubRank = p._rank; p._pubOf = pl.of;
+      const qid = G().phase === "question" ? curQid() : null;
+      const ans = {};
+      for (const k in p.ans) { const a = p.ans[k]; ans[k] = k === qid ? { a: a.a } : { a: a.a, ok: a.ok, pts: a.pts || 0 }; }
+      const pl = { ts: Date.now(), sid: S.sid, key: p.key, name: p.name, score: p.score, streak: p.streak || 0, ans, ev: p.ev.slice(-8) };
       p.pids.forEach((pid) => net.pub(T_PL(pid), pl, true));
     }
-    // раз в 8 секунд досылаем изменившиеся места в рейтинге
-    setInterval(() => {
-      const arr = ranked(), n = arr.length;
-      arr.forEach((p) => { if (p._pubRank !== p._rank || p._pubOf !== n) publishPlayer(p); });
-    }, 8000);
-
-    let bT = null, lastB = 0;
+    let bT = 0, lastB = 0;
     function broadcast(now) {
       clearTimeout(bT);
       const go = () => {
         lastB = Date.now();
-        const arr = ranked();
+        const g = G(), arr = ranked();
         net.pub(T_ST, {
-          mid: U.mid(), ts: Date.now(), host: HOST_ID, sid: S.sid, active: S.active, closed: S.closed,
-          n: arr.length, board: arr.map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._rank }))
+          mid: U.mid(), ts: Date.now(), host: HOST_ID, sid: S.sid,
+          phase: g.phase, block: g.block, qi: g.qi, limit: g.limit,
+          left: g.phase === "question" ? Math.max(0, g.limit * 1000 - (Date.now() - g.qStart)) : null,
+          answered: g.phase === "question" ? answeredCount() : null, next: nextLabel(),
+          board: arr.map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._r }))
         }, true);
       };
-      if (now) go(); else bT = setTimeout(go, Math.max(0, 600 - (Date.now() - lastB)));
+      if (now) go(); else bT = setTimeout(go, Math.max(0, 500 - (Date.now() - lastB)));
     }
-    setInterval(() => broadcast(true), 15000);
+    setInterval(() => broadcast(true), 10000);
 
-    // ---------- пульт ----------
-    async function handleAdm(m) {
+    async function onAdm(m) {
       if (!m || !m.cmd || !m.sig || !m.n || !m.ts) return;
-      if (Math.abs(Date.now() - m.ts) > 5 * 60000 || usedNonces.has(m.n)) return;
-      const sig = await U.sign(hkey, m.ts + "|" + m.n + "|" + JSON.stringify(m.cmd));
-      if (sig !== m.sig) return;
-      usedNonces.set(m.n, Date.now());
+      if (Math.abs(Date.now() - m.ts) > 5 * 60000 || usedN.has(m.n)) return;
+      if ((await U.sign(hkey, m.ts + "|" + m.n + "|" + JSON.stringify(m.cmd))) !== m.sig) return;
+      usedN.set(m.n, 1);
       const c = m.cmd;
       if (c.op === "adj") adjust(c.k, +c.d, c.r, c.e);
-      else if (c.op === "active") setActive(c.id);
-      else if (c.op === "close") setClosed(c.id, !!c.v);
+      else if (c.op === "next" && c.phase === G().phase) next();
+      else if (c.op === "open") openBlock(c.id);
+      else if (c.op === "lobby") toLobby();
     }
 
     // ---------- отрисовка ----------
-    const shown = {}; // key -> показанный счёт (для анимации чисел)
-    function avatar(p) { return `<div class="avatar" style="--h:${U.hue(p.key)}">${esc(U.initials(p.name))}</div>`; }
-    function okCount(p) { return Object.values(p.ans).filter((a) => a.ok).length; }
-
-    function renderAll() { renderBoard(); renderQR(); renderAdminBar(); $("#hCount").textContent = Object.keys(S.players).length; }
-
-    function flip(container, build) {
-      const before = new Map();
-      container.querySelectorAll("[data-k]").forEach((el) => before.set(el.dataset.k, el.getBoundingClientRect()));
-      build();
-      container.querySelectorAll("[data-k]").forEach((el) => {
-        const b = before.get(el.dataset.k); if (!b) { el.classList.add("pop-in"); return; }
-        const a = el.getBoundingClientRect(); const dx = b.left - a.left, dy = b.top - a.top;
-        if (dx || dy) { el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: "none" }], { duration: 650, easing: "cubic-bezier(.2,1.2,.4,1)" }); }
-      });
+    const stage = $("#stage");
+    let shownKey = "";
+    function render(force) {
+      $("#hCount").textContent = Object.keys(S.players).length;
+      const nb = $("#next"); nb.hidden = false; nb.innerHTML = esc(nextLabel()) + "<kbd>пробел</kbd>";
+      nb.className = "btn nextbtn " + (G().phase === "question" ? "btn--glass" : "btn--go");
+      const g = G(), key = g.phase + "/" + g.block + "/" + g.qi;
+      if (force || key !== shownKey) { shownKey = key; full(); } else live();
     }
-    function countUp(el, key, to) {
-      const from = shown[key] ?? to; shown[key] = to;
-      if (from === to) { el.textContent = to; return; }
-      const t0 = performance.now(), dur = 700;
-      const step = (t) => { const k = Math.min(1, (t - t0) / dur); el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
-      requestAnimationFrame(step);
+    function full() {
+      const g = G(), b = curBlock();
+      if (g.phase === "lobby") return drawLobby();
+      if (g.phase === "intro") return drawIntro(b);
+      if (g.phase === "question") return drawQuestion(b);
+      if (g.phase === "reveal") return drawReveal(b);
+      if (g.phase === "board") return drawBoard(b);
+      if (g.phase === "podium") return drawPodium(b);
     }
-
-    function renderBoard() {
-      const arr = ranked();
-      $("#boardEmpty").hidden = arr.length > 0;
-      $("#podium").hidden = arr.length === 0;
-      const top = [arr[1], arr[0], arr[2]], cls = ["p2", "p1", "p3"], medal = ["🥈", "👑", "🥉"];
-      flip($("#podium"), () => {
-        $("#podium").innerHTML = top.map((p, i) => p
-          ? `<div class="pod ${cls[i]}" data-k="${esc(p.key)}"><span class="medal">${medal[i]}</span>${avatar(p)}<div class="nm">${esc(p.name)}</div><div class="sc" data-sc>${p.score}</div><div class="sm">${p._rank} место · ✓ ${okCount(p)}</div></div>`
-          : `<div class="pod ${cls[i]} empty"><span class="medal">${medal[i]}</span><div class="nm">—</div><div class="sc">0</div></div>`).join("");
-      });
-      const rest = arr.slice(3);
-      const rowsEl = $("#rows");
-      rowsEl.style.gridTemplateRows = window.innerWidth > 900 ? `repeat(${Math.max(1, Math.ceil(rest.length / 2))}, auto)` : "";
-      flip(rowsEl, () => {
-        rowsEl.innerHTML = rest.map((p) => `<div class="row" data-k="${esc(p.key)}"><span class="rk">${p._rank}</span>${avatar(p)}<span class="nm">${esc(p.name)}</span><span class="ok">✓ ${okCount(p)}</span><span class="sc" data-sc>${p.score}</span></div>`).join("");
-      });
-      $$("[data-k]", $(".board")).forEach((el) => {
-        const p = S.players[el.dataset.k]; if (!p) return;
-        const sc = el.querySelector("[data-sc]"); if (sc) countUp(sc, p.key, p.score);
-        el.onclick = () => openPlayer({ k: p.key, n: p.name, s: p.score }, { history: p.ev, onAdj: (d, r, e) => adjust(p.key, d, r, e), onDelete: () => removePlayer(p.key) });
-      });
+    // частичные обновления без перерисовки всего экрана
+    function live() {
+      const g = G();
+      if (g.phase === "lobby") updNames();
+      if (g.phase === "question") { const a = $("#ansN"); if (a) a.textContent = answeredCount(); const t = $("#ansT"); if (t) t.textContent = "из " + Object.keys(S.players).length; }
+      if (g.phase === "intro") { const c = $("#introN"); if (c) c.textContent = Object.keys(S.players).length; }
     }
 
-    function flashRow(key, d) {
-      requestAnimationFrame(() => {
-        const el = $(`.board [data-k="${CSS.escape(key)}"]`); if (!el) return;
-        el.classList.remove("flash-neg", "flash-pos"); void el.offsetWidth; el.classList.add(d < 0 ? "flash-neg" : "flash-pos");
-        const b = document.createElement("span"); b.className = "delta-badge " + (d < 0 ? "neg" : "pos"); b.textContent = fmtD(d); el.appendChild(b);
-        setTimeout(() => b.remove(), 1700);
-      });
+    function joinQR() { return U.qrSvg(U.joinUrl()); }
+    function drawLobby() {
+      const nx = nextUndone();
+      stage.innerHTML = `<div class="lobby">
+        <div class="joincard card rise"><h2>Заходи в игру!</h2><div class="qr">${joinQR()}</div><div class="url">${esc(U.joinUrl().replace(/^https?:\/\//, ""))}</div>
+          <div class="cnt"><span id="lobN">${Object.keys(S.players).length}</span><small>игроков в комнате</small></div><div class="names" id="names"></div></div>
+        <div class="practices"><h2>Выберите практику</h2><div class="pgrid">
+          ${BLOCKS.map((b, i) => `<button class="pt rise ${S.done[b.id] ? "done" : ""} ${b === nx ? "next" : ""}" style="animation-delay:${i * 30}ms" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id} · ${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")}${S.done[b.id] ? " · ✓ пройдено" : ""}</small></button>`).join("")}
+        </div></div></div>`;
+      stage.querySelectorAll("[data-b]").forEach((t) => t.onclick = () => openBlock(t.dataset.b));
+      updNames(true);
     }
-
-    function blockStats(b) {
-      const players = Object.values(S.players);
-      const done = players.filter((p) => b.q.every((_, i) => p.ans[U.qid(b.id, i)])).length;
-      const per = b.q.map((_, i) => { const qid = U.qid(b.id, i); const as = players.map((p) => p.ans[qid]).filter(Boolean); return { n: as.length, ok: as.filter((a) => a.ok).length }; });
-      return { done, total: players.length, per };
-    }
-
-    let qrKey = "";
-    function renderQR() {
-      const panel = $("#qrpanel");
-      const b = S.active ? byId[S.active] : null;
-      const url = U.blockUrl(b ? b.id : null);
-      const closed = b && S.closed.includes(b.id);
-      let html;
-      if (b) {
-        const st = blockStats(b);
-        const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
-        html = `<span class="eyebrow">Практика · слайд ${b.id} · ${esc(b.topic)}</span>
-          <h2>${b.emoji} ${esc(b.title)}</h2>
-          <div class="qrbox">${U.qrSvg(url)}</div>
-          <div class="qrurl">${esc(url.replace(/^https?:\/\//, ""))}</div>
-          ${closed ? `<div class="pill" style="align-self:center;color:var(--ink)">🔒 Приём ответов закрыт</div>` : ""}
-          <div class="prog"><div class="lbl"><span>Прошли блок</span><span>${st.done} из ${st.total}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>
-          <div class="qstats">${st.per.map((x, i) => `<div class="qstat"><span>В${i + 1}</span><div class="b"><i style="width:${x.n ? Math.round(100 * x.ok / x.n) : 0}%"></i></div><span>${x.n ? Math.round(100 * x.ok / x.n) + "%" : "—"}</span></div>`).join("")}</div>
-          <div class="qradm"><button class="btn btn--sm ${closed ? "" : "btn--red"}" type="button" id="qClose">${closed ? "🔓 Открыть приём" : "🔒 Закрыть приём"}</button><button class="btn btn--sm btn--ghost" type="button" id="qHide">Общий QR</button></div>`;
-      } else {
-        html = `<span class="eyebrow">Присоединяйтесь</span>
-          <h2>Сканируй — и в бой! 📲</h2>
-          <div class="qrbox">${U.qrSvg(url)}</div>
-          <div class="qrurl">${esc(url.replace(/^https?:\/\//, ""))}</div>
-          <p style="margin:0;font-weight:800">Введи фамилию и имя. Вопросы откроются по QR-коду на слайде с практикой.</p>`;
+    function updNames(all) {
+      const box = $("#names"); if (!box) return;
+      const arr = Object.values(S.players);
+      $("#lobN").textContent = arr.length;
+      if (all || newName) {
+        box.innerHTML = arr.slice(-40).reverse().map((p) => `<span>${esc(p.name)}</span>`).join("");
+        newName = null;
       }
-      if (html === qrKey) return; qrKey = html;
-      panel.innerHTML = html;
-      const qc = $("#qClose"); if (qc) qc.onclick = () => setClosed(b.id, !closed);
-      const qh = $("#qHide"); if (qh) qh.onclick = () => setActive(null);
+    }
+    function drawIntro(b) {
+      stage.innerHTML = `<div class="intro"><div class="e pop">${b.emoji}</div><div class="eb rise">Практика · слайд ${b.id} · ${esc(b.topic)}</div>
+        <h1 class="rise" style="animation-delay:.1s">${esc(b.title)}</h1>
+        <p class="rise" style="animation-delay:.2s">${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")} · до 1000 очков за ответ · чем быстрее, тем больше</p>
+        <p class="rise" style="animation-delay:.3s">👥 <b id="introN">${Object.keys(S.players).length}</b> в игре</p></div>
+        <div class="cornerqr card"><div class="qr">${joinQR()}</div><div><b>Ещё не в игре?</b><span>Сканируй и входи</span></div></div>`;
+    }
+    function tilesHTML(q, rev) {
+      return `<div class="htiles ${q.o.length === 2 ? "two" : ""}">${q.o.map((o, i) => `<div class="tile ${SHAPES[i].cls} pop ${rev && i !== q.c ? "dim" : ""}" style="animation-delay:${i * 70}ms"><span class="sh">${SHAPES[i].svg}</span><span class="tx">${esc(o)}</span>${rev && i === q.c ? '<span class="mark">✔</span>' : ""}</div>`).join("")}</div>`;
+    }
+    function drawQuestion(b) {
+      const q = curQ(), g = G();
+      const R = 46, C = 2 * Math.PI * R;
+      stage.innerHTML = `<div class="qbar pop">${esc(q.t)}</div>
+        <div class="qmid">
+          <div class="timer" id="timer"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="7"/><circle class="fg" id="tArc" cx="50" cy="50" r="${R}" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg><span id="tNum">${g.limit}</span></div>
+          <div class="qcenter"><div class="e">${b.emoji}</div><div class="n">Вопрос ${g.qi + 1} из ${b.q.length}${q.p === 15 ? " · задача на расчёт" : ""}</div></div>
+          <div class="answered"><b id="ansN">${answeredCount()}</b><span id="ansT">из ${Object.keys(S.players).length}</span><br><span>ответили</span></div>
+        </div>${tilesHTML(q, false)}`;
+      stage.dataset.c = C;
+      updTimer(Math.max(0, Math.ceil(g.limit - (Date.now() - g.qStart) / 1000)));
+    }
+    function updTimer(sec) {
+      const n = $("#tNum"), arc = $("#tArc"); if (!n) return;
+      n.textContent = sec;
+      const C = +stage.dataset.c; arc.style.transition = "stroke-dashoffset .9s linear";
+      arc.style.strokeDashoffset = C * (1 - sec / G().limit);
+      $("#timer").classList.toggle("hurry", sec <= 5);
+    }
+    function drawReveal(b) {
+      const q = curQ(), qid = curQid();
+      const counts = q.o.map(() => 0); Object.values(S.players).forEach((p) => { const a = p.ans[qid]; if (a) counts[a.a]++; });
+      const max = Math.max(1, ...counts);
+      const okN = counts[q.c], tot = Object.keys(S.players).length;
+      stage.innerHTML = `<div class="qbar">${esc(q.t)}</div>
+        <div class="qmid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)">
+          <div class="chart">${q.o.map((_, i) => `<div class="col ${SHAPES[i].cls} ${i !== q.c ? "dim" : ""}"><div class="lab"><span class="sh">${SHAPES[i].svg}</span>${counts[i]}${i === q.c ? " ✔" : ""}</div><div class="bar" style="height:0" data-h="${Math.round(100 * counts[i] / max)}"></div></div>`).join("")}</div>
+          <div class="explain rise"><b>${okN} из ${tot} ответили верно.</b><br>${esc(q.x || "")}</div>
+        </div>${tilesHTML(q, true)}`;
+      requestAnimationFrame(() => requestAnimationFrame(() => stage.querySelectorAll(".chart .bar").forEach((el) => el.style.height = Math.max(.3, +el.dataset.h / 100 * 10.5) + "em")));
+    }
+    function drawBoard(b) {
+      const g = G(), arr = ranked(), top = arr.slice(0, 5), qid = curQid();
+      stage.innerHTML = `<div class="board"><h1 class="pop">Рейтинг</h1><div class="brows" id="brows">
+        ${top.map((p, i) => { const a = p.ans[qid]; const gain = a && a.pts ? a.pts : 0;
+          return `<div class="brow ${i === 0 ? "lead" : ""}" data-k="${esc(p.key)}"><span class="r">${p._r}</span><div class="avatar" style="--h:${U.hue(p.key)}">${esc(U.initials(p.name))}</div><span class="nm">${esc(p.name)}</span>${p.streak > 1 ? `<span class="st">🔥${p.streak}</span>` : ""}${gain ? `<span class="gain">+${gain}</span>` : ""}<span class="s" data-from="${g.prev[p.key] ?? p.score}" data-to="${p.score}">${g.prev[p.key] ?? p.score}</span></div>`; }).join("")}
+        </div>${arr.length > 5 ? `<div class="bmore">и ещё ${arr.length - 5} ${U.plural(arr.length - 5, "игрок", "игрока", "игроков")} — нажмите «🏆 Рейтинг», чтобы увидеть всех</div>` : arr.length ? "" : `<div class="bmore">Пока никто не играет</div>`}</div>`;
+      // анимация: строки едут с прежних мест, очки дорастают
+      const rows = $$("#brows .brow"), h = rows[0] ? rows[0].getBoundingClientRect().height + 8 : 0;
+      rows.forEach((el, i) => {
+        const was = g.prevOrder.indexOf(el.dataset.k);
+        const from = was < 0 ? 5 : Math.min(was, 6);
+        el.animate([{ transform: `translateY(${(from - i) * h}px)`, opacity: was < 0 || was > 5 ? 0 : 1 }, { transform: "none", opacity: 1 }], { duration: 900, delay: 300, easing: "cubic-bezier(.2,1.1,.4,1)", fill: "backwards" });
+        const s = el.querySelector(".s"), f = +s.dataset.from, t = +s.dataset.to, t0 = performance.now() + 250;
+        const step = (now) => { const k = Math.max(0, Math.min(1, (now - t0) / 900)); s.textContent = Math.round(f + (t - f) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      });
+    }
+    function drawPodium(b) {
+      const arr = ranked(), top = [arr[1], arr[0], arr[2]], cls = ["p2", "p1", "p3"], num = [2, 1, 3], delay = [0.9, 1.6, 0.3];
+      stage.innerHTML = `<div class="intro" style="flex:none;padding-top:.4em"><div class="eb">Итоги · ${esc(b.title)}</div></div>
+        <div class="podium">${top.map((p, i) => `<div class="pcol ${cls[i]}">${p ? `<div class="avatar" style="--h:${U.hue(p.key)};width:3.4em;height:3.4em;font-size:1.2em;animation:pop .5s ${delay[i] + .6}s both">${esc(U.initials(p.name))}</div><div class="who" style="animation-delay:${delay[i] + .7}s">${esc(p.name)}</div><div class="pts" style="animation-delay:${delay[i] + .8}s">${pts(p.score)}</div>` : ""}<div class="blk" style="animation-delay:${delay[i]}s">${num[i]}</div></div>`).join("")}</div>`;
     }
 
-    function renderAdminBar() {
-      const bar = $("#adminbar");
-      bar.innerHTML = `<b>На экране:</b><button class="chip ${!S.active ? "on" : ""}" data-a="">📲 Общий QR</button>` +
-        BLOCKS.map((b) => `<button class="chip ${S.active === b.id ? "on" : ""} ${S.closed.includes(b.id) ? "closed" : ""}" data-a="${b.id}" title="${esc(b.title)}">${b.emoji} ${b.id}</button>`).join("");
-      bar.querySelectorAll("[data-a]").forEach((c) => c.onclick = () => setActive(c.dataset.a || null));
-    }
-
-    function renderTicker(item) {
-      const tk = $("#ticker");
-      const el = document.createElement("span");
-      el.className = "tick " + (item.ty === "neg" ? "neg" : item.ty === "pos" ? "pos" : item.ty === "first" ? "first" : "");
-      el.innerHTML = `${item.e || ""} <b>${esc(item.n)}</b> ${esc(item.r || "")}${item.d ? " " + fmtD(item.d) : ""}`;
-      tk.insertBefore(el, tk.children[1] || null);
-      while (tk.children.length > 9) tk.lastChild.remove();
-    }
-
-    // ---------- событие на весь экран ----------
+    // ---------- событие (штраф/бонус) на весь экран ----------
     const popQ = []; let popping = false;
     function eventPop(p, ev) { popQ.push({ p, ev }); if (!popping) nextPop(); }
     function nextPop() {
-      const it = popQ.shift(); if (!it) { popping = false; return; }
-      popping = true;
+      const it = popQ.shift(); if (!it) { popping = false; return; } popping = true;
       const { p, ev } = it, neg = ev.d < 0;
-      const mood = neg ? (/сон|сп/i.test(ev.r) ? "sleep" : "sad") : "wow";
-      const el = document.createElement("div");
-      el.className = "epop " + (neg ? "neg" : "pos");
-      el.innerHTML = `<div class="box sticker">${mascot(mood)}<div><div class="em">${ev.e || (neg ? "⚠️" : "🌟")}</div><div class="nm">${esc(p.name)}</div><div class="rs">${esc(ev.r)}</div><div class="dl">${fmtD(ev.d)}</div></div></div>`;
+      const el = document.createElement("div"); el.className = "epop " + (neg ? "neg" : "pos");
+      el.innerHTML = `<div class="box card"><div class="em">${ev.e || (neg ? "⚠️" : "🌟")}</div><div class="nm">${esc(p.name)}</div><div class="rs">${esc(ev.r)}</div><div class="dl">${fmtD(ev.d)}</div></div>`;
       document.body.appendChild(el);
-      neg ? SFX.penalty() : (SFX.bonus(), confetti(110));
-      setTimeout(() => { el.classList.add("out"); setTimeout(() => { el.remove(); nextPop(); }, 400); }, 3200);
+      neg ? SFX.penalty() : (SFX.bonus(), confetti(120));
+      setTimeout(() => { el.classList.add("out"); setTimeout(() => { el.remove(); nextPop(); }, 400); }, 2800);
     }
+    function banner(t) { if ($(".banner")) return; const b = document.createElement("div"); b.className = "banner"; b.textContent = t; document.body.appendChild(b); setTimeout(() => b.remove(), 12000); }
 
-    function showBanner(text) {
-      if ($(".banner")) return;
-      const b = document.createElement("div"); b.className = "banner"; b.textContent = text; document.body.appendChild(b);
-      setTimeout(() => b.remove(), 12000);
+    // ---------- оверлеи: рейтинг, штрафы, пульт ----------
+    let ovKind = null;
+    function openOverlay(kind) {
+      ovKind = kind;
+      const ov = $("#ov"); ov.hidden = false;
+      if (kind === "pult") {
+        const url = CFG.joinUrl + "screen.html?pult=1";
+        ov.innerHTML = `<div class="ovhead"><h2>📱 Пульт на телефоне</h2><button class="btn" type="button" data-close>Закрыть</button></div>
+          <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(80vw,22em)">${U.qrSvg(url)}</div>
+          <p style="max-width:40ch;font-weight:700;color:var(--dim);margin:0">Отсканируйте своим телефоном и войдите тем же логином и паролем. С пульта можно листать вопросы («Далее»), открывать практики и ставить штрафы и бонусы, не подходя к компьютеру.</p></div>`;
+      } else {
+        const rating = kind === "rating";
+        ov.innerHTML = `<div class="ovhead"><h2>${rating ? "🏆 Общий рейтинг" : "⚠️ Кому штраф или бонус?"}</h2><input type="search" id="ovQ" placeholder="Поиск по фамилии" aria-label="Поиск по фамилии"><button class="btn" type="button" data-close>Закрыть</button></div><div class="ovbody"><div class="plgrid" id="ovList"></div></div>`;
+        const list = () => {
+          const q = U.normName($("#ovQ").value);
+          let arr = ranked(); if (!rating) arr = arr.slice().sort((a, b) => a.name.localeCompare(b.name, "ru"));
+          arr = arr.filter((p) => !q || p.key.includes(q));
+          $("#ovList").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.key)}"><span class="r">${p._r}</span><div class="avatar" style="--h:${U.hue(p.key)}">${esc(U.initials(p.name))}</div><span class="nm">${esc(p.name)}</span><span class="s">${p.score}</span></button>`).join("")
+            : `<div class="empty">${Object.keys(S.players).length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
+          $$("#ovList .plb").forEach((b) => b.onclick = () => { const p = S.players[b.dataset.k]; openPlayer({ k: p.key, n: p.name, s: p.score, r: p._r }, (d, r, e) => adjust(p.key, d, r, e), { history: p.ev, onDelete: () => removePlayer(p.key) }); });
+        };
+        $("#ovQ").oninput = list; list();
+        if (!rating) setTimeout(() => $("#ovQ").focus(), 50);
+      }
+      ov.querySelector("[data-close]").onclick = closeOverlay;
     }
+    function closeOverlay() { $("#ov").hidden = true; ovKind = null; if (document.activeElement) document.activeElement.blur(); }
 
-    // ---------- кнопки ----------
-    function togglePresent() { presenting = !presenting; U.store.set("opp.presenting", presenting); document.body.classList.toggle("presenting", presenting); }
-    $("#bPresent").onclick = togglePresent;
-    document.addEventListener("keydown", (e) => {
-      if (e.target.matches("input,textarea,select")) return;
-      if (e.key === "p" || e.key === "P" || e.key === "з" || e.key === "З") togglePresent();
-    });
-    $("#bOut").onclick = logout;
-    $("#bCsv").onclick = () => {
+    // ---------- кнопки и клавиши ----------
+    $("#next").onclick = () => { SFX.unlock(); next(); };
+    $("#bRating").onclick = () => openOverlay("rating");
+    $("#bPen").onclick = () => openOverlay("pen");
+    $("#bPult").onclick = () => openOverlay("pult");
+    $("#bSound").onclick = () => { SFX.unlock(); SFX.muted = !SFX.muted; U.store.set("opp.muted", SFX.muted); $("#bSound").textContent = SFX.muted ? "🔇" : "🔊"; music(); };
+    $("#bMenu").onclick = (e) => { e.stopPropagation(); $("#menu").hidden = !$("#menu").hidden; };
+    document.addEventListener("click", () => { $("#menu").hidden = true; });
+    $("#mLobby").onclick = toLobby;
+    $("#mOut").onclick = logout;
+    $("#mCsv").onclick = () => {
       const rows = [["Место", "Фамилия Имя", "Очки", "Верных ответов", "Всего ответов", "Штрафы", "Бонусы"]];
-      ranked().forEach((p) => {
-        const a = Object.values(p.ans);
-        rows.push([p._rank, p.name, p.score, a.filter((x) => x.ok).length, a.length,
-          p.ev.filter((e) => e.d < 0).reduce((s, e) => s + e.d, 0), p.ev.filter((e) => e.d > 0).reduce((s, e) => s + e.d, 0)]);
-      });
+      ranked().forEach((p) => { const a = Object.values(p.ans); rows.push([p._r, p.name, p.score, a.filter((x) => x.ok).length, a.length, p.ev.filter((e) => e.d < 0).reduce((s, e) => s + e.d, 0), p.ev.filter((e) => e.d > 0).reduce((s, e) => s + e.d, 0)]); });
       const csv = "﻿" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      a.download = "Рейтинг_Модуль3_" + new Date().toLocaleDateString("ru-RU").replace(/\./g, "-") + ".csv";
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      a.download = "Битва_коммерсантов_" + new Date().toLocaleDateString("ru-RU").replace(/\./g, "-") + ".csv";
       document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     };
-    $("#bReset").onclick = () => {
+    $("#mReset").onclick = () => {
       const m = $("#modal"), box = $("#modalBox");
-      box.innerHTML = `<div class="mhead"><div style="width:90px">${mascot("wow")}</div><div><b>Начать новый урок?</b><span style="font-weight:700;color:var(--muted)">Все очки и ответы обнулятся. Таблицу лучше скачать заранее.</span></div></div>
-        <div class="mfoot"><button class="btn btn--ghost" type="button" id="rNo">Отмена</button><button class="btn btn--red" type="button" id="rYes">Да, обнулить</button></div>`;
+      box.innerHTML = `<div class="mhead"><div style="font-size:2.6rem">♻️</div><div><b>Начать новый урок?</b><small>Все очки и ответы обнулятся. Таблицу результатов лучше скачать заранее.</small></div></div>
+        <div class="mrow"><button class="btn btn--sm" style="background:#F0EBFA" type="button" id="rNo">Отмена</button><button class="btn btn--sm btn--red" type="button" id="rYes">Да, обнулить</button></div>`;
       m.hidden = false;
       $("#rNo").onclick = () => m.hidden = true;
       $("#rYes").onclick = () => {
         const old = Object.values(S.players).flatMap((p) => p.pids);
-        S = fresh(); save(); m.hidden = true;
-        old.forEach((pid) => net.pub(T_PL(pid), { ts: Date.now(), sid: S.sid, key: "", name: "", score: 0, ans: {}, ev: [] }, true));
-        Object.keys(shown).forEach((k) => delete shown[k]);
-        $("#ticker").querySelectorAll(".tick").forEach((t) => t.remove());
-        broadcast(true); renderAll(); toast("Новый урок начат");
+        S = fresh(); save(); m.hidden = true; clearInterval(qTimer);
+        old.forEach((pid) => net.pub(T_PL(pid), { ts: Date.now(), sid: S.sid, key: "", name: "", score: 0, ans: {}, ev: [], streak: 0 }, true));
+        broadcast(true); render(true); music(); toast("Новый урок начат");
       };
     };
-    window.addEventListener("resize", () => renderBoard());
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { if (!$("#modal").hidden) $("#modal").hidden = true; else closeOverlay(); return; }
+      if (e.target.matches("input,textarea,select")) return;
+      if (!$("#modal").hidden || !$("#ov").hidden) return;
+      if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); SFX.unlock(); next(); }
+      if (e.key === "r" || e.key === "к") openOverlay("rating");
+    });
+    window.addEventListener("resize", () => render(true));
 
-    S.feed.slice(-8).forEach(renderTicker);
-    renderAll();
-    broadcast(true);
+    // восстановление после перезагрузки
+    if (G().phase === "question") { if (Date.now() - G().qStart > G().limit * 1000) reveal(); else runTimer(); }
+    render(true); broadcast(true);
+    document.addEventListener("pointerdown", () => { SFX.unlock(); music(); }, { once: true });
   }
 
-  // =============================== ПУЛЬТ ===============================
+  // ============================ ПУЛЬТ (телефон) ============================
   function startPult() {
     $("#v-pult").hidden = false;
+    document.body.style.overflow = "auto";
     let st = null;
     net.sub(T_ST);
-    const alive = () => st && Date.now() - st.ts < 70000;
-    const upd = () => {
-      const on = net.online;
-      $("#pNetDot").classList.toggle("on", on > 0 && alive());
-      $("#pNet").textContent = !on ? "нет связи" : alive() ? "экран на связи" : "большой экран не отвечает";
-    };
-    net.onStatus(upd); setInterval(upd, 4000);
-    net.on((topic, msg) => { if (topic === T_ST) { if (st && msg.ts < st.ts) return; st = msg; upd(); render(); } });
-
-    const sel = $("#pActive");
-    sel.innerHTML = `<option value="">📲 Общий QR</option>` + BLOCKS.map((b) => `<option value="${b.id}">${b.emoji} Слайд ${b.id} — ${esc(b.title)}</option>`).join("");
-    sel.onchange = () => cmd({ op: "active", id: sel.value ? +sel.value : null }, "Экран переключён");
-    $("#pSearch").oninput = render;
-    $("#pOut").onclick = logout;
+    const alive = () => st && Date.now() - st.ts < 40000;
+    const upd = () => { const on = net.online; $("#pNetDot").classList.toggle("on", on > 0 && alive()); $("#pNet").textContent = !on ? "нет связи" : alive() ? "экран на связи" : "экран не отвечает"; };
+    net.onStatus(upd); setInterval(upd, 3000);
+    net.on((t, m) => { if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; upd(); render(); } });
+    $("#pSearch").oninput = renderList; $("#pOut").onclick = logout;
 
     async function cmd(c, okText) {
       const ts = Date.now(), n = U.mid();
       const sig = await U.sign(hkey, ts + "|" + n + "|" + JSON.stringify(c));
       const sent = net.pub(T_ADM, { mid: U.mid(), ts, n, cmd: c, sig });
-      toast(sent ? (alive() ? okText : okText + " (экран пока не отвечает)") : "Нет связи — команда не ушла");
+      if (navigator.vibrate) try { navigator.vibrate(30); } catch (_) {}
+      toast(!sent ? "Нет связи — команда не ушла" : alive() ? okText : okText + " (экран пока не отвечает)");
     }
-
+    const PH = { lobby: "Выбор практики", intro: "Заставка практики", question: "Идёт вопрос", reveal: "Правильный ответ", board: "Рейтинг", podium: "Итоги практики" };
+    let lastKey = "";
     function render() {
-      if (!st) { $("#plist").innerHTML = `<p class="muted">Ждём данные с большого экрана…</p>`; return; }
-      if (document.activeElement !== sel) sel.value = st.active ? String(st.active) : "";
+      if (!st) { $("#pNow").innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700;color:var(--ink-2)">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
+      const b = st.block ? byId[st.block] : null, q = b && st.phase !== "intro" && st.phase !== "podium" ? b.q[st.qi] : null;
+      const key = [st.phase, st.block, st.qi, st.answered, st.next].join("|");
+      if (key !== lastKey) {
+        lastKey = key;
+        $("#pNow").innerHTML = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>
+          ${q ? `<div class="qt">${esc(q.t)}</div><div style="font-weight:800;color:var(--good)">Ответ: ${esc(q.o[q.c])}</div>` : b ? `<div class="qt">${b.emoji} ${esc(b.title)}</div>` : ""}
+          ${st.phase === "question" ? `<div style="font-weight:800;color:var(--ink-2)">Ответили: ${st.answered} из ${st.board.length}</div>` : ""}
+          <button class="btn btn--go big" type="button" id="pNext">${esc(st.next || "Далее ▶")}</button>
+          ${st.phase !== "lobby" ? `<button class="btn btn--sm" style="background:#F0EBFA" type="button" id="pLobby">🏠 К выбору практики</button>` : ""}`;
+        $("#pNext").onclick = () => cmd({ op: "next", phase: st.phase }, "Готово");
+        const pl = $("#pLobby"); if (pl) pl.onclick = () => cmd({ op: "lobby" }, "Открыт выбор практики");
+        $("#pBlocks").innerHTML = st.phase === "lobby" ? `<div class="pblocks">${BLOCKS.map((b) => `<button class="pt" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id}</small></button>`).join("")}</div>` : "";
+        $$("#pBlocks [data-b]").forEach((t) => t.onclick = () => cmd({ op: "open", id: +t.dataset.b }, "Практика открыта"));
+      }
+      renderList();
+    }
+    function renderList() {
+      if (!st) return;
       const q = U.normName($("#pSearch").value);
-      const list = (st.board || []).filter((p) => !q || p.k.includes(q));
-      $("#plist").innerHTML = list.length ? list.map((p) => `<div class="row" data-k="${esc(p.k)}"><span class="rk">${p.r}</span><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div><span class="nm">${esc(p.n)}</span><span class="sc">${p.s}</span></div>`).join("")
-        : `<p class="muted">${st.board && st.board.length ? "Никого не нашли" : "Пока никто не присоединился"}</p>`;
-      $$("#plist .row").forEach((el) => el.onclick = () => {
-        const p = st.board.find((x) => x.k === el.dataset.k);
-        openPlayer(p, { onAdj: (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`) });
-      });
+      const arr = (st.board || []).filter((p) => !q || p.k.includes(q));
+      $("#plist").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.k)}"><span class="r">${p.r}</span><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div><span class="nm">${esc(p.n)}</span><span class="s">${p.s}</span></button>`).join("")
+        : `<div class="empty">${st.board && st.board.length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
+      $$("#plist .plb").forEach((el) => el.onclick = () => { const p = st.board.find((x) => x.k === el.dataset.k); openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`)); });
     }
     render();
   }
