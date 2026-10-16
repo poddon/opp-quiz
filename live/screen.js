@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const { CFG, Net, U, SHAPES, SFX, confetti } = window.OPP;
+  const { CFG, Net, U, SFX, confetti } = window.OPP;
   const { $, $$, esc } = U;
   const BLOCKS = window.BLOCKS, VIOL = window.VIOLATIONS;
   const byId = Object.fromEntries(BLOCKS.map((b) => [String(b.id), b]));
@@ -13,8 +13,6 @@
   let password = null, hkey = null, net = null;
 
   // фон
-  const fl = document.querySelector(".floaters");
-  for (let i = 0; i < 8; i++) { const e = document.createElement("i"); e.innerHTML = SHAPES[i % 4].svg; e.style.left = (i * 12.5 + Math.random() * 6) + "%"; e.style.animationDelay = (-i * 3.5) + "s"; e.style.animationDuration = 24 + i * 3 + "s"; fl.appendChild(e); }
 
   function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("#toasts").appendChild(d); setTimeout(() => d.remove(), 2600); }
 
@@ -47,14 +45,14 @@
     const m = $("#modal"), box = $("#modalBox");
     const vb = (v) => `<button class="vb ${v.delta > 0 ? "pos" : ""}" type="button" data-v="${v.id}"><span class="e">${v.emoji}</span>${esc(v.label)}<span class="d">${fmtD(v.delta)}</span></button>`;
     box.innerHTML = `
-      <div class="mhead"><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div><div><b>${esc(p.n)}</b><small>${pts(p.s)}${p.r ? " · " + p.r + " место" : ""}</small></div><button class="x" type="button" id="mx" aria-label="Закрыть">✕</button></div>
+      <div class="mhead">${U.av(p.k, p.n)}<div><b>${esc(p.n)}</b><small>${pts(p.s)}${p.r ? " · " + p.r + " место" : ""}</small></div><button class="x" type="button" id="mx" aria-label="Закрыть">✕</button></div>
       <span class="lbl">Нарушение</span><div class="vgrid">${VIOL.filter((v) => v.delta < 0).map(vb).join("")}</div>
       <span class="lbl">Бонус</span><div class="vgrid">${VIOL.filter((v) => v.delta > 0).map(vb).join("")}</div>
       <span class="lbl">Своё значение</span>
       <div class="custom"><input id="cD" type="number" step="50" min="0" value="100" aria-label="Очки"><input id="cR" type="text" maxlength="60" placeholder="Причина" aria-label="Причина"></div>
-      <div class="mrow"><button class="btn btn--sm btn--red" type="button" id="cM">− Снять</button><button class="btn btn--sm btn--go" type="button" id="cP">+ Начислить</button></div>
+      <div class="mrow"><button class="btn btn--sm btn--navy" type="button" id="cM">− Снять</button><button class="btn btn--sm btn--blue" type="button" id="cP">+ Начислить</button></div>
       ${extra.history && extra.history.length ? `<span class="lbl">История</span><div class="hist">${extra.history.slice().reverse().map((e) => `<div><span>${e.e || ""} ${esc(e.r)}</span><b>${fmtD(e.d)}</b></div>`).join("")}</div>` : ""}
-      ${extra.onDelete ? `<div class="mrow"><span></span><button class="btn btn--sm btn--glass" style="color:var(--ink);background:#F0EBFA" type="button" id="mDel">Убрать из игры</button></div>` : ""}`;
+      ${extra.onDelete ? `<div class="mrow"><span></span><button class="btn btn--sm" type="button" id="mDel">Убрать из игры</button></div>` : ""}`;
     m.hidden = false;
     const close = () => { m.hidden = true; };
     $("#mx").onclick = close; m.onclick = (e) => { if (e.target === m) close(); };
@@ -132,12 +130,45 @@
       const ev = { id: "e" + U.mid(), d, r: String(r || "").slice(0, 60), e: e || "", t: Date.now() };
       p.ev.push(ev); p.ev = p.ev.slice(-30);
       save(); publishPlayer(p); broadcast(true); render(); eventPop(p, ev);
+      const first = p.name.split(" ")[1] || p.name;
+      say(pick(d < 0 ? (/сон/i.test(ev.r) ? Q.sleep : Q.neg) : Q.pos).replace("{n}", first));
       if (!$("#ov").hidden && ovKind) openOverlay(ovKind);
     }
     function removePlayer(key) {
       const p = S.players[key]; if (!p) return;
       delete S.players[key]; for (const pid in S.pidKey) if (S.pidKey[pid] === key) delete S.pidKey[pid];
       save(); broadcast(true); render(); if (ovKind) openOverlay(ovKind); toast("Убран из игры: " + p.name);
+    }
+
+    // ---------- ведущий шутит ----------
+    const Q = {
+      lobby: ["Заходим, не стесняемся! Телефон — ваш пульт.", "Кто последний зайдёт — тот сегодня считает НДС вручную.", "Пока все подтягиваются: калькулятор уже открыли?"],
+      join: ["{n} в игре! Добро пожаловать в бизнес.", "О, {n}! Свежий коммерсант на рынке.", "{n} заходит в комнату. Поставщики нервничают.", "{n} с нами. Делаем ставки!"],
+      intro: ["Включаем мозг коммерсанта.", "НДС сам себя не вычтет. Поехали!", "Помните: дешевле — не значит выгоднее."],
+      question: ["Тик-так… Время — деньги.", "Думайте как коммерсант, а не как покупатель.", "Списывать у соседа — минус 500. Я всё вижу.", "Кто ответит первым, тот и молодец."],
+      revealHi: ["Вот это коммерсанты! Почти все правы.", "Красота! Директор доволен.", "Так держать — премия близко."],
+      revealMid: ["Половина группы в прибыли, половина — в техотходе.", "Неплохо, но склад ещё не полон.", "Кто-то явно пролистал этот слайд."],
+      revealLo: ["Ой. Кажется, кто-то купил дешёвую доску.", "Тут без претензии к поставщику не обойтись.", "Ничего, на ошибках учатся. Даже в Алабуге."],
+      board: ["{n} рвётся в лидеры!", "{n} на первом месте. Остальные, догоняйте!", "Таблица лидеров горячее сушильной камеры."],
+      podium: ["Аплодисменты лучшим коммерсантам!", "Вот они — будущие технологические предприниматели!"],
+      sleep: ["{n}, проснись! Поддоны сами себя не посчитают.", "Тсс… {n} уехал в сушильную камеру."],
+      neg: ["{n} теряет очки. Экономика суровая.", "Штраф по пункту 5.3 договора, {n}."],
+      pos: ["{n} получает премию!", "Браво, {n}! Это в рейтинг."]
+    };
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    let sayT = 0;
+    function say(text) {
+      const el = $("#hostSay");
+      el.innerHTML = `<div class="mic">🎤</div><div class="say">${esc(text)}</div>`;
+      clearTimeout(sayT); sayT = setTimeout(() => { el.innerHTML = ""; }, 9000);
+    }
+    function phaseSay() {
+      const g = G(), arr = ranked();
+      if (g.phase === "lobby") say(pick(Q.lobby));
+      else if (g.phase === "intro") say(pick(Q.intro));
+      else if (g.phase === "question") say(pick(Q.question));
+      else if (g.phase === "board" && arr[0]) say(pick(Q.board).replace("{n}", arr[0].name));
+      else if (g.phase === "podium") say(pick(Q.podium));
     }
 
     // ---------- ход игры ----------
@@ -164,7 +195,7 @@
       if (g.phase === "board") return g.qi + 1 < curBlock().q.length ? startQuestion(g.qi + 1) : toPodium();
       if (g.phase === "podium") { S.done[g.block] = true; return toLobby(); }
     }
-    function setPhase(ph) { G().phase = ph; save(); broadcast(true); render(true); music(); }
+    function setPhase(ph) { G().phase = ph; save(); broadcast(true); render(true); music(); phaseSay(); }
     function toLobby() { clearInterval(qTimer); G().block = null; setPhase("lobby"); }
     function openBlock(id) { if (!byId[id]) return; clearInterval(qTimer); Object.assign(G(), { block: +id, qi: 0 }); setPhase("intro"); }
     function startQuestion(i) {
@@ -251,7 +282,7 @@
     function render(force) {
       $("#hCount").textContent = Object.keys(S.players).length;
       const nb = $("#next"); nb.hidden = false; nb.innerHTML = esc(nextLabel()) + "<kbd>пробел</kbd>";
-      nb.className = "btn nextbtn " + (G().phase === "question" ? "btn--glass" : "btn--go");
+      nb.className = "btn nextbtn " + (G().phase === "question" ? "" : "btn--navy");
       const g = G(), key = g.phase + "/" + g.block + "/" + g.qi;
       if (force || key !== shownKey) { shownKey = key; full(); } else live();
     }
@@ -276,69 +307,70 @@
     function drawLobby() {
       const nx = nextUndone();
       stage.innerHTML = `<div class="lobby">
-        <div class="joincard card rise"><h2>Заходи в игру!</h2><div class="qr">${joinQR()}</div><div class="url">${esc(U.joinUrl().replace(/^https?:\/\//, ""))}</div>
-          <div class="cnt"><span id="lobN">${Object.keys(S.players).length}</span><small>игроков в комнате</small></div><div class="names" id="names"></div></div>
-        <div class="practices"><h2>Выберите практику</h2><div class="pgrid">
-          ${BLOCKS.map((b, i) => `<button class="pt rise ${S.done[b.id] ? "done" : ""} ${b === nx ? "next" : ""}" style="animation-delay:${i * 30}ms" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id} · ${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")}${S.done[b.id] ? " · ✓ пройдено" : ""}</small></button>`).join("")}
-        </div></div></div>`;
+        <div class="joincol"><div class="logo slam">Битва<span>коммерсантов</span></div>
+          <div class="joincard sticker tilt-l rise"><span class="ribbon">Наведи камеру</span><div class="qr">${joinQR()}</div><div class="url">${esc(U.joinUrl().replace(/^https?:\/\//, ""))}</div></div></div>
+        <div class="rightcol">
+          <div class="phead"><span class="ribbon w">Игроки: <span id="lobN">0</span></span></div>
+          <div class="slots" id="slots"></div>
+          <div class="phead"><h2>Выберите практику</h2></div>
+          <div class="pgrid">${BLOCKS.map((b, i) => `<button class="pt rise ${S.done[b.id] ? "done" : ""} ${b === nx ? "next" : ""}" style="animation-delay:${i * 30}ms" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id} · ${b.q.length} вопр.${S.done[b.id] ? " · ✓" : ""}</small></button>`).join("")}</div>
+        </div></div>`;
       stage.querySelectorAll("[data-b]").forEach((t) => t.onclick = () => openBlock(t.dataset.b));
       updNames(true);
     }
     function updNames(all) {
-      const box = $("#names"); if (!box) return;
+      const box = $("#slots"); if (!box) return;
       const arr = Object.values(S.players);
       $("#lobN").textContent = arr.length;
-      if (all || newName) {
-        box.innerHTML = arr.slice(-40).reverse().map((p) => `<span>${esc(p.name)}</span>`).join("");
-        newName = null;
-      }
+      if (!all && !newName) return;
+      const show = arr.slice(-11).reverse();
+      const empty = Math.max(0, Math.min(12, 6 - show.length));
+      box.innerHTML = show.map((p) => `<div class="slot on">${U.av(p.key, p.name)}<span class="nm">${esc(p.name)}</span></div>`).join("")
+        + (arr.length > 11 ? `<div class="slot on" style="justify-content:center"><span class="more">+${arr.length - 11}</span></div>` : "")
+        + Array.from({ length: empty }, () => `<div class="slot">ждём игрока…</div>`).join("");
+      if (newName && S.players[newName]) say(pick(Q.join).replace("{n}", S.players[newName].name.split(" ")[1] || S.players[newName].name));
+      newName = null;
     }
     function drawIntro(b) {
-      stage.innerHTML = `<div class="intro"><div class="e pop">${b.emoji}</div><div class="eb rise">Практика · слайд ${b.id} · ${esc(b.topic)}</div>
-        <h1 class="rise" style="animation-delay:.1s">${esc(b.title)}</h1>
-        <p class="rise" style="animation-delay:.2s">${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")} · до 1000 очков за ответ · чем быстрее, тем больше</p>
-        <p class="rise" style="animation-delay:.3s">👥 <b id="introN">${Object.keys(S.players).length}</b> в игре</p></div>
-        <div class="cornerqr card"><div class="qr">${joinQR()}</div><div><b>Ещё не в игре?</b><span>Сканируй и входи</span></div></div>`;
+      stage.innerHTML = `<div class="intro"><div class="sunburst"></div><div class="e wobble">${b.emoji}</div>
+        <span class="ribbon w rise">Практика · слайд ${b.id} · ${esc(b.topic)}</span>
+        <h1 class="slam" style="animation-delay:.1s">${esc(b.title)}</h1>
+        <div class="facts sticker tilt-r rise" style="animation-delay:.3s">${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")} · до 1000 очков · чем быстрее, тем больше · 👥 <b id="introN">${Object.keys(S.players).length}</b></div></div>
+        <div class="cornerqr sticker tilt-r"><div class="qr">${joinQR()}</div><div><b>Опоздал?</b><span>Сканируй и заходи</span></div></div>`;
     }
-    function tilesHTML(q, rev) {
-      return `<div class="htiles ${q.o.length === 2 ? "two" : ""}">${q.o.map((o, i) => `<div class="tile ${SHAPES[i].cls} pop ${rev && i !== q.c ? "dim" : ""}" style="animation-delay:${i * 70}ms"><span class="sh">${SHAPES[i].svg}</span><span class="tx">${esc(o)}</span>${rev && i === q.c ? '<span class="mark">✔</span>' : ""}</div>`).join("")}</div>`;
+    function optsHTML(q, rev, voters) {
+      return `<div class="hopts ${q.o.length === 2 ? "two" : ""}">${q.o.map((o, i) => {
+        const v = voters ? voters[i] : null;
+        return `<div class="opt pop ${rev ? (i === q.c ? "right" : "dim") : ""}" style="animation-delay:${i * 80}ms"><span class="L">${U.L[i]}</span><span class="tx">${esc(o)}</span>${v ? `<span class="hcount">${v.length}</span><div class="voters">${v.slice(0, 18).map((p, k) => U.av(p.key, p.name).replace('class="av', `style="animation-delay:${400 + k * 40}ms" class="av`)).join("")}${v.length > 18 ? `<span class="nmore">+${v.length - 18}</span>` : ""}</div>` : ""}</div>`;
+      }).join("")}</div>`;
     }
     function drawQuestion(b) {
       const q = curQ(), g = G();
-      const R = 46, C = 2 * Math.PI * R;
-      stage.innerHTML = `<div class="qbar pop">${esc(q.t)}</div>
-        <div class="qmid">
-          <div class="timer" id="timer"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="7"/><circle class="fg" id="tArc" cx="50" cy="50" r="${R}" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg><span id="tNum">${g.limit}</span></div>
-          <div class="qcenter"><div class="e">${b.emoji}</div><div class="n">Вопрос ${g.qi + 1} из ${b.q.length}${q.p === 15 ? " · задача на расчёт" : ""}</div></div>
-          <div class="answered"><b id="ansN">${answeredCount()}</b><span id="ansT">из ${Object.keys(S.players).length}</span><br><span>ответили</span></div>
-        </div>${tilesHTML(q, false)}`;
-      stage.dataset.c = C;
+      stage.innerHTML = `<div class="qtop"><div class="qbar sticker tilt-l slam">${esc(q.t)}</div><div class="timer" id="timer"><span id="tNum">${g.limit}</span></div></div>
+        <div class="qmeta"><span class="ribbon">${b.emoji} Вопрос ${g.qi + 1} из ${b.q.length}${q.p === 15 ? " · расчёт" : ""}</span><span class="cnt"><b id="ansN">${answeredCount()}</b> <span id="ansT">из ${Object.keys(S.players).length}</span> ответили</span></div>
+        ${optsHTML(q, false)}`;
       updTimer(Math.max(0, Math.ceil(g.limit - (Date.now() - g.qStart) / 1000)));
     }
     function updTimer(sec) {
-      const n = $("#tNum"), arc = $("#tArc"); if (!n) return;
+      const n = $("#tNum"); if (!n) return;
       n.textContent = sec;
-      const C = +stage.dataset.c; arc.style.transition = "stroke-dashoffset .9s linear";
-      arc.style.strokeDashoffset = C * (1 - sec / G().limit);
       $("#timer").classList.toggle("hurry", sec <= 5);
     }
     function drawReveal(b) {
       const q = curQ(), qid = curQid();
-      const counts = q.o.map(() => 0); Object.values(S.players).forEach((p) => { const a = p.ans[qid]; if (a) counts[a.a]++; });
-      const max = Math.max(1, ...counts);
-      const okN = counts[q.c], tot = Object.keys(S.players).length;
-      stage.innerHTML = `<div class="qbar">${esc(q.t)}</div>
-        <div class="qmid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)">
-          <div class="chart">${q.o.map((_, i) => `<div class="col ${SHAPES[i].cls} ${i !== q.c ? "dim" : ""}"><div class="lab"><span class="sh">${SHAPES[i].svg}</span>${counts[i]}${i === q.c ? " ✔" : ""}</div><div class="bar" style="height:0" data-h="${Math.round(100 * counts[i] / max)}"></div></div>`).join("")}</div>
-          <div class="explain rise"><b>${okN} из ${tot} ответили верно.</b><br>${esc(q.x || "")}</div>
-        </div>${tilesHTML(q, true)}`;
-      requestAnimationFrame(() => requestAnimationFrame(() => stage.querySelectorAll(".chart .bar").forEach((el) => el.style.height = Math.max(.3, +el.dataset.h / 100 * 10.5) + "em")));
+      const voters = q.o.map(() => []);
+      Object.values(S.players).forEach((p) => { const a = p.ans[qid]; if (a) voters[a.a].push(p); });
+      const okN = voters[q.c].length, tot = Object.keys(S.players).length, share = tot ? okN / tot : 0;
+      stage.innerHTML = `<div class="qtop"><div class="qbar sticker tilt-l">${esc(q.t)}</div></div>
+        <div class="explain sticker tilt-r rise"><b>${okN} из ${tot} ${U.plural(tot, "ответил", "ответили", "ответили")} верно.</b> ${esc(q.x || "")}</div>
+        <div style="height:1.2em"></div>${optsHTML(q, true, voters)}`;
+      say(pick(share >= .7 ? Q.revealHi : share >= .35 ? Q.revealMid : Q.revealLo));
     }
     function drawBoard(b) {
       const g = G(), arr = ranked(), top = arr.slice(0, 5), qid = curQid();
       stage.innerHTML = `<div class="board"><h1 class="pop">Рейтинг</h1><div class="brows" id="brows">
         ${top.map((p, i) => { const a = p.ans[qid]; const gain = a && a.pts ? a.pts : 0;
-          return `<div class="brow ${i === 0 ? "lead" : ""}" data-k="${esc(p.key)}"><span class="r">${p._r}</span><div class="avatar" style="--h:${U.hue(p.key)}">${esc(U.initials(p.name))}</div><span class="nm">${esc(p.name)}</span>${p.streak > 1 ? `<span class="st">🔥${p.streak}</span>` : ""}${gain ? `<span class="gain">+${gain}</span>` : ""}<span class="s" data-from="${g.prev[p.key] ?? p.score}" data-to="${p.score}">${g.prev[p.key] ?? p.score}</span></div>`; }).join("")}
+          return `<div class="brow ${i === 0 ? "lead" : ""}" data-k="${esc(p.key)}"><span class="r">${p._r}</span>${U.av(p.key, p.name)}<span class="nm">${esc(p.name)}</span>${p.streak > 1 ? `<span class="st">🔥${p.streak}</span>` : ""}${gain ? `<span class="gain">+${gain}</span>` : ""}<span class="s" data-from="${g.prev[p.key] ?? p.score}" data-to="${p.score}">${g.prev[p.key] ?? p.score}</span></div>`; }).join("")}
         </div>${arr.length > 5 ? `<div class="bmore">и ещё ${arr.length - 5} ${U.plural(arr.length - 5, "игрок", "игрока", "игроков")} — нажмите «🏆 Рейтинг», чтобы увидеть всех</div>` : arr.length ? "" : `<div class="bmore">Пока никто не играет</div>`}</div>`;
       // анимация: строки едут с прежних мест, очки дорастают
       const rows = $$("#brows .brow"), h = rows[0] ? rows[0].getBoundingClientRect().height + 8 : 0;
@@ -353,8 +385,8 @@
     }
     function drawPodium(b) {
       const arr = ranked(), top = [arr[1], arr[0], arr[2]], cls = ["p2", "p1", "p3"], num = [2, 1, 3], delay = [0.9, 1.6, 0.3];
-      stage.innerHTML = `<div class="intro" style="flex:none;padding-top:.4em"><div class="eb">Итоги · ${esc(b.title)}</div></div>
-        <div class="podium">${top.map((p, i) => `<div class="pcol ${cls[i]}">${p ? `<div class="avatar" style="--h:${U.hue(p.key)};width:3.4em;height:3.4em;font-size:1.2em;animation:pop .5s ${delay[i] + .6}s both">${esc(U.initials(p.name))}</div><div class="who" style="animation-delay:${delay[i] + .7}s">${esc(p.name)}</div><div class="pts" style="animation-delay:${delay[i] + .8}s">${pts(p.score)}</div>` : ""}<div class="blk" style="animation-delay:${delay[i]}s">${num[i]}</div></div>`).join("")}</div>`;
+      stage.innerHTML = `<div style="text-align:center;padding-top:.6em"><span class="ribbon w slam">🏁 Итоги · ${esc(b.title)}</span></div>
+        <div class="podium">${top.map((p, i) => `<div class="pcol ${cls[i]}">${p ? `${U.av(p.key, p.name).replace('class="av', `style="animation:pop .5s ${delay[i] + .6}s both" class="av`)}<div class="who" style="animation-delay:${delay[i] + .7}s">${esc(p.name)}</div><div class="pts" style="animation-delay:${delay[i] + .8}s">${pts(p.score)}</div>` : ""}<div class="blk" style="animation-delay:${delay[i]}s">${num[i]}</div></div>`).join("")}</div>`;
     }
 
     // ---------- событие (штраф/бонус) на весь экран ----------
@@ -364,7 +396,7 @@
       const it = popQ.shift(); if (!it) { popping = false; return; } popping = true;
       const { p, ev } = it, neg = ev.d < 0;
       const el = document.createElement("div"); el.className = "epop " + (neg ? "neg" : "pos");
-      el.innerHTML = `<div class="box card"><div class="em">${ev.e || (neg ? "⚠️" : "🌟")}</div><div class="nm">${esc(p.name)}</div><div class="rs">${esc(ev.r)}</div><div class="dl">${fmtD(ev.d)}</div></div>`;
+      el.innerHTML = `<div class="box sticker"><div class="em">${ev.e || (neg ? "⚠️" : "🌟")}</div><div class="nm">${esc(p.name)}</div><div class="rs">${esc(ev.r)}</div><div class="dl">${fmtD(ev.d)}</div></div>`;
       document.body.appendChild(el);
       neg ? SFX.penalty() : (SFX.bonus(), confetti(120));
       setTimeout(() => { el.classList.add("out"); setTimeout(() => { el.remove(); nextPop(); }, 400); }, 2800);
@@ -388,7 +420,7 @@
           const q = U.normName($("#ovQ").value);
           let arr = ranked(); if (!rating) arr = arr.slice().sort((a, b) => a.name.localeCompare(b.name, "ru"));
           arr = arr.filter((p) => !q || p.key.includes(q));
-          $("#ovList").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.key)}"><span class="r">${p._r}</span><div class="avatar" style="--h:${U.hue(p.key)}">${esc(U.initials(p.name))}</div><span class="nm">${esc(p.name)}</span><span class="s">${p.score}</span></button>`).join("")
+          $("#ovList").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.key)}"><span class="r">${p._r}</span>${U.av(p.key, p.name)}<span class="nm">${esc(p.name)}</span><span class="s">${p.score}</span></button>`).join("")
             : `<div class="empty">${Object.keys(S.players).length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
           $$("#ovList .plb").forEach((b) => b.onclick = () => { const p = S.players[b.dataset.k]; openPlayer({ k: p.key, n: p.name, s: p.score, r: p._r }, (d, r, e) => adjust(p.key, d, r, e), { history: p.ev, onDelete: () => removePlayer(p.key) }); });
         };
@@ -420,7 +452,7 @@
     $("#mReset").onclick = () => {
       const m = $("#modal"), box = $("#modalBox");
       box.innerHTML = `<div class="mhead"><div style="font-size:2.6rem">♻️</div><div><b>Начать новый урок?</b><small>Все очки и ответы обнулятся. Таблицу результатов лучше скачать заранее.</small></div></div>
-        <div class="mrow"><button class="btn btn--sm" style="background:#F0EBFA" type="button" id="rNo">Отмена</button><button class="btn btn--sm btn--red" type="button" id="rYes">Да, обнулить</button></div>`;
+        <div class="mrow"><button class="btn btn--sm" type="button" id="rNo">Отмена</button><button class="btn btn--sm btn--navy" type="button" id="rYes">Да, обнулить</button></div>`;
       m.hidden = false;
       $("#rNo").onclick = () => m.hidden = true;
       $("#rYes").onclick = () => {
@@ -441,7 +473,7 @@
 
     // восстановление после перезагрузки
     if (G().phase === "question") { if (Date.now() - G().qStart > G().limit * 1000) reveal(); else runTimer(); }
-    render(true); broadcast(true);
+    render(true); broadcast(true); phaseSay();
     document.addEventListener("pointerdown", () => { SFX.unlock(); music(); }, { once: true });
   }
 
@@ -467,16 +499,16 @@
     const PH = { lobby: "Выбор практики", intro: "Заставка практики", question: "Идёт вопрос", reveal: "Правильный ответ", board: "Рейтинг", podium: "Итоги практики" };
     let lastKey = "";
     function render() {
-      if (!st) { $("#pNow").innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700;color:var(--ink-2)">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
+      if (!st) { $("#pNow").innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
       const b = st.block ? byId[st.block] : null, q = b && st.phase !== "intro" && st.phase !== "podium" ? b.q[st.qi] : null;
       const key = [st.phase, st.block, st.qi, st.answered, st.next].join("|");
       if (key !== lastKey) {
         lastKey = key;
         $("#pNow").innerHTML = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>
-          ${q ? `<div class="qt">${esc(q.t)}</div><div style="font-weight:800;color:var(--good)">Ответ: ${esc(q.o[q.c])}</div>` : b ? `<div class="qt">${b.emoji} ${esc(b.title)}</div>` : ""}
-          ${st.phase === "question" ? `<div style="font-weight:800;color:var(--ink-2)">Ответили: ${st.answered} из ${st.board.length}</div>` : ""}
-          <button class="btn btn--go big" type="button" id="pNext">${esc(st.next || "Далее ▶")}</button>
-          ${st.phase !== "lobby" ? `<button class="btn btn--sm" style="background:#F0EBFA" type="button" id="pLobby">🏠 К выбору практики</button>` : ""}`;
+          ${q ? `<div class="qt">${esc(q.t)}</div><div class="ans">✔ Ответ: ${U.L[q.c]}. ${esc(q.o[q.c])}</div>` : b ? `<div class="qt">${b.emoji} ${esc(b.title)}</div>` : ""}
+          ${st.phase === "question" ? `<div style="font-weight:800">Ответили: ${st.answered} из ${st.board.length}</div>` : ""}
+          <button class="btn btn--blue big" type="button" id="pNext">${esc(st.next || "Далее ▶")}</button>
+          ${st.phase !== "lobby" ? `<button class="btn btn--sm" type="button" id="pLobby">🏠 К выбору практики</button>` : ""}`;
         $("#pNext").onclick = () => cmd({ op: "next", phase: st.phase }, "Готово");
         const pl = $("#pLobby"); if (pl) pl.onclick = () => cmd({ op: "lobby" }, "Открыт выбор практики");
         $("#pBlocks").innerHTML = st.phase === "lobby" ? `<div class="pblocks">${BLOCKS.map((b) => `<button class="pt" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id}</small></button>`).join("")}</div>` : "";
@@ -488,7 +520,7 @@
       if (!st) return;
       const q = U.normName($("#pSearch").value);
       const arr = (st.board || []).filter((p) => !q || p.k.includes(q));
-      $("#plist").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.k)}"><span class="r">${p.r}</span><div class="avatar" style="--h:${U.hue(p.k)}">${esc(U.initials(p.n))}</div><span class="nm">${esc(p.n)}</span><span class="s">${p.s}</span></button>`).join("")
+      $("#plist").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.k)}"><span class="r">${p.r}</span>${U.av(p.k, p.n)}<span class="nm">${esc(p.n)}</span><span class="s">${p.s}</span></button>`).join("")
         : `<div class="empty">${st.board && st.board.length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
       $$("#plist .plb").forEach((el) => el.onclick = () => { const p = st.board.find((x) => x.k === el.dataset.k); openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`)); });
     }

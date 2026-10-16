@@ -160,9 +160,11 @@
       const q = window.qrcode(0, opts.ecc || "M"); q.addData(text); q.make();
       const n = q.getModuleCount(), m = 2; let d = "";
       for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
-      return `<svg viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR-код"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1B0B3B"/></svg>`;
+      return `<svg viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR-код"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#071A5C"/></svg>`;
     },
     joinUrl: () => CFG.joinUrl,
+    av(key, name, extra = "") { let h = 0; for (const ch of key || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0; return `<span class="av k${h % 6} ${extra}">${U.esc(U.initials(name))}</span>`; },
+    L: "АБВГД",
     qid: (b, i) => b + "." + i
   };
 
@@ -227,7 +229,7 @@
   /* ---------- Конфетти ---------- */
   function confetti(n = 60, origin) {
     const box = document.createElement("div"); box.className = "confetti"; document.body.appendChild(box);
-    const colors = ["#E5484D", "#2F6FED", "#F5B400", "#2EAA4A", "#FFFFFF", "#B98BFF"];
+    const colors = ["#FFFFFF", "#5C8DFF", "#071A5C", "#DCE7FF", "#1F50FF", "#FFFFFF"];
     const ox = origin ? origin.x : innerWidth / 2, oy = origin ? origin.y : innerHeight / 3;
     for (let i = 0; i < n; i++) {
       const p = document.createElement("i");

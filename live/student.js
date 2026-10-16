@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const { CFG, Net, U, SHAPES, SFX, confetti } = window.OPP;
+  const { CFG, Net, U, SFX, confetti } = window.OPP;
   const { $, esc } = U;
   const byId = Object.fromEntries(window.BLOCKS.map((b) => [String(b.id), b]));
 
@@ -14,9 +14,6 @@
   let st = null, stAt = 0, me = null, deadline = 0, view = "", resultShown = {};
   const pending = {};   // qid -> {a, t}
 
-  // фон
-  const fl = document.querySelector(".floaters");
-  for (let i = 0; i < 7; i++) { const e = document.createElement("i"); e.innerHTML = SHAPES[i % 4].svg; e.style.left = (i * 15 + Math.random() * 8) + "%"; e.style.animationDelay = (-i * 4) + "s"; e.style.animationDuration = 22 + i * 3 + "s"; fl.appendChild(e); }
 
   // ---- связь ----
   const net = new Net(CFG.brokers);
@@ -72,45 +69,45 @@
     $("#bottom").hidden = !joined;
     if (joined) {
       $("#meName").textContent = prof.name;
-      const av = $("#meAv"); av.textContent = U.initials(prof.name); av.style.setProperty("--h", U.hue(U.normName(prof.name)));
+      $("#meAv").innerHTML = U.av(U.normName(prof.name), prof.name);
       $("#meScore").textContent = me ? me.score : 0;
     }
     if (!joined) return renderJoin();
-    if (!hostAlive()) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><h1>Ждём преподавателя</h1><p>Как только откроется большой экран, ты попадёшь в игру.</p></div>`); }
+    if (!hostAlive()) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><div class="card sticker tilt-l"><h1>Ждём ведущего</h1><p>Как только преподаватель откроет большой экран, ты в игре.</p></div></div>`); }
     const b = st.block ? byId[st.block] : null;
     $("#topL").textContent = b && st.phase !== "lobby" ? `${b.emoji} Слайд ${b.id}` + (st.phase === "intro" || st.phase === "podium" ? "" : ` · вопрос ${st.qi + 1} из ${b.q.length}`) : "Битва коммерсантов";
 
     switch (st.phase) {
       case "intro":
-        return setView("intro" + st.block, `<div class="center pop"><div class="big">${b.emoji}</div><h1>Приготовься!</h1><p>${esc(b.title)} · ${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")}</p><p>Чем быстрее верный ответ, тем больше очков.</p></div>`);
+        return setView("intro" + st.block, `<div class="center"><div class="big wobble">${b.emoji}</div><h1 class="slam">Приготовься!</h1><div class="card sticker tilt-r pop"><p><b>${esc(b.title)}</b><br>${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")}. Чем быстрее верный ответ, тем больше очков.</p></div></div>`);
       case "question": return renderQuestion(b);
       case "reveal": return renderResult(b);
       case "board": {
         const r = myRank();
         const key = "board" + st.block + "." + st.qi + "/" + (r ? r.r + ":" + r.s : "");
-        return setView(key, `<div class="center pop"><div class="big">📊</div><h1>${r ? r.r + " место" : "Рейтинг"}</h1>
-          <p>${r ? `${r.s} ${U.plural(r.s, "очко", "очка", "очков")}` : ""}</p>
-          ${r && r.ahead ? `<p>До ${r.ahead.r} места — ${r.ahead.s - r.s + 1} ${U.plural(r.ahead.s - r.s + 1, "очко", "очка", "очков")}</p>` : r && r.r === 1 ? `<p>Ты лидер! Держись 👑</p>` : ""}</div>`);
+        return setView(key, `<div class="center"><span class="ribbon w">Твоё место</span><h1 class="slam" style="font-size:4.4rem">${r ? r.r : "—"}</h1>
+          <div class="card sticker tilt-l pop"><p><b>${r ? `${r.s} ${U.plural(r.s, "очко", "очка", "очков")}` : ""}</b><br>
+          ${r && r.ahead ? `До ${r.ahead.r} места — ${r.ahead.s - r.s + 1} ${U.plural(r.ahead.s - r.s + 1, "очко", "очка", "очков")}` : r && r.r === 1 ? `Ты лидер! Не расслабляйся 👑` : "Смотри на экран"}</p></div></div>`);
       }
       case "podium": {
         const r = myRank();
         const medal = r && r.r <= 3 ? ["🥇", "🥈", "🥉"][r.r - 1] : "🎉";
-        return setView("podium" + st.block + "/" + (r ? r.r : ""), `<div class="center pop"><div class="big">${medal}</div><h1>${r ? r.r + " место" : "Финиш!"}</h1><p>Практика «${esc(b.title)}» завершена. Смотри на экран!</p></div>`,
+        return setView("podium" + st.block + "/" + (r ? r.r : ""), `<div class="center"><div class="big wobble">${medal}</div><h1 class="slam">${r ? r.r + " место" : "Финиш!"}</h1><div class="card sticker tilt-r pop"><p>Практика «${esc(b.title)}» завершена. Смотри на экран!</p></div></div>`,
           () => { if (r && r.r <= 3 && !resultShown["pod" + st.block]) { resultShown["pod" + st.block] = 1; confetti(120); } });
       }
       default:
-        return setView("lobby", `<div class="center pop"><div class="big">🎮</div><h1>Ты в игре!</h1><p>Смотри на большой экран. Когда начнётся вопрос, здесь появятся кнопки ответа.</p></div>`);
+        return setView("lobby", `<div class="center"><span class="ribbon w">Добро пожаловать</span><h1 class="slam">Ты в игре!</h1><div class="card sticker tilt-l pop"><p>Смотри на большой экран. Когда начнётся вопрос, здесь появятся варианты ответа.</p></div></div>`);
     }
   }
 
   function renderJoin() {
     $("#topL").textContent = "ОПП · Модуль 3";
     if (!setView("join", `<div class="center">
-      <div class="logo">Битва<span>коммерсантов</span></div>
-      <form class="join card" id="jf" autocomplete="on">
+      <div class="logo hero-logo slam">Битва<span>коммерсантов</span></div>
+      <form class="join sticker tilt-l rise" id="jf" autocomplete="on">
         <div class="field"><label for="fam">Фамилия</label><input id="fam" autocomplete="family-name" required maxlength="30"></div>
         <div class="field"><label for="nam">Имя</label><input id="nam" autocomplete="given-name" required maxlength="30"></div>
-        <button class="btn btn--dark" type="submit">Войти в игру</button>
+        <button class="btn btn--blue" type="submit">Я в деле!</button>
       </form></div>`)) return;
     if (prof.last) { const [f, ...n] = prof.last.split(" "); $("#fam").value = f || ""; $("#nam").value = n.join(" "); }
     $("#jf").addEventListener("submit", (e) => {
@@ -126,21 +123,18 @@
     const q = b.q[st.qi], qid = U.qid(b.id, st.qi);
     const mine = (me && me.ans && me.ans[qid]) || pending[qid];
     if (mine) {
-      const s = SHAPES[mine.a % 4];
-      return setView("ans" + qid, `<div class="center pop"><div class="tile ${s.cls}" style="width:120px;height:120px;justify-content:center;border-radius:20px"><span class="sh" style="width:64px;height:64px">${s.svg}</span></div>
-        <h1>Ответ принят!</h1><p>Ждём остальных… Смотри на экран.</p><div class="spin"></div></div>`);
+      return setView("ans" + qid, `<div class="center"><div class="opt pop" style="font-size:2.4rem;padding:14px;transform:rotate(-6deg)"><span class="L">${U.L[mine.a]}</span></div>
+        <h1 class="slam">Ответ принят!</h1><div class="card sticker tilt-r"><p>Ждём остальных… Смотри на экран.</p></div></div>`);
     }
     const left = deadline - Date.now();
-    if (left <= 0) return setView("late" + qid, `<div class="center pop"><div class="big">⏰</div><h1>Время вышло</h1><p>Ответ уже не принимается.</p></div>`);
-    const short = q.o.every((o) => o.length <= 22);
+    if (left <= 0) return setView("late" + qid, `<div class="center"><div class="big wobble">⏰</div><h1 class="slam">Время вышло</h1></div>`);
     const changed = setView("q" + qid, `
-      <div class="qhead"><div class="qtext">${esc(q.t)}</div>
-        <div class="tline"><span>Вопрос ${st.qi + 1} из ${b.q.length}</span><span id="tsec"></span></div>
-        <div class="tbar"><i id="tfill"></i></div></div>
-      <div class="tiles ${q.o.length === 2 ? "two" : ""} ${short ? "short" : ""}">
-        ${q.o.map((o, i) => `<button class="tile ${SHAPES[i].cls} pop" style="animation-delay:${i * 60}ms" type="button" data-a="${i}"><span class="sh">${SHAPES[i].svg}</span><span class="tx">${esc(o)}</span></button>`).join("")}
+      <div class="tline"><span class="ribbon">Вопрос ${st.qi + 1} из ${b.q.length}</span><span class="timer" id="tsec"></span></div>
+      <div class="qtext sticker tilt-l">${esc(q.t)}</div>
+      <div class="opts">
+        ${q.o.map((o, i) => `<button class="opt pop" style="animation-delay:${i * 70}ms" type="button" data-a="${i}"><span class="L">${U.L[i]}</span><span class="tx">${esc(o)}</span></button>`).join("")}
       </div>`, () => {
-      main.querySelectorAll(".tile").forEach((t) => t.addEventListener("click", () => {
+      main.querySelectorAll(".opt").forEach((t) => t.addEventListener("click", () => {
         SFX.unlock();
         const a = +t.dataset.a;
         pending[qid] = { a, t: Date.now() };
@@ -154,9 +148,9 @@
       const lim = (st.limit || 25) * 1000;
       const tick = () => {
         const l = Math.max(0, deadline - Date.now());
-        const f = $("#tfill"), s = $("#tsec");
-        if (!f || view !== "q" + qid) return;
-        f.style.width = (100 * l / lim) + "%"; s.textContent = Math.ceil(l / 1000) + " с";
+        const s = $("#tsec");
+        if (!s || view !== "q" + qid) return;
+        s.textContent = Math.ceil(l / 1000); s.classList.toggle("hurry", l < 5000);
         if (l <= 0) { view = ""; render(); return; }
         timerRaf = requestAnimationFrame(tick);
       };
@@ -171,15 +165,15 @@
     const rankLine = r ? `<div class="rank">${r.r} место из ${r.of}</div>` : "";
     if (a && typeof a.ok === "boolean") {
       const html = a.ok
-        ? `<div class="result ok"><div class="ic pop">✓</div><h1>Верно!</h1><div class="gain pop">+${a.pts}</div>${me.streak > 1 ? `<div class="rank">🔥 ${me.streak} подряд</div>` : ""}${rankLine}</div>`
-        : `<div class="result no"><div class="ic pop">✕</div><h1>Неверно</h1><div class="note">Правильный ответ: ${esc(q.o[q.c])}</div>${rankLine}</div>`;
+        ? `<div class="result ok"><div class="stamp slam">Верно!</div><div class="gain pop">+${a.pts}</div>${me.streak > 1 ? `<span class="ribbon w">🔥 ${me.streak} подряд</span>` : ""}${rankLine}</div>`
+        : `<div class="result no"><div class="stamp slam">Мимо</div><div class="note sticker tilt-r">Правильный ответ: <b>${U.L[q.c]}. ${esc(q.o[q.c])}</b></div>${rankLine}</div>`;
       return setView("res" + qid + "/" + a.ok + (r ? r.r : ""), html, () => {
         if (resultShown[qid]) return; resultShown[qid] = 1;
-        if (a.ok) { SFX.good(); confetti(70); } else { SFX.bad(); main.querySelector(".ic").classList.add("shake"); if (navigator.vibrate) try { navigator.vibrate([120, 60, 120]); } catch (_) {} }
+        if (a.ok) { SFX.good(); confetti(70); } else { SFX.bad(); main.querySelector(".stamp").classList.add("shake"); if (navigator.vibrate) try { navigator.vibrate([120, 60, 120]); } catch (_) {} }
       });
     }
     if (a || pending[qid]) return setView("res-wait" + qid, `<div class="center"><div class="spin"></div><h1>Считаем…</h1></div>`);
-    return setView("res-none" + qid, `<div class="result none"><div class="big">🤷</div><h1>Без ответа</h1><div class="note">Правильный ответ: ${esc(q.o[q.c])}</div>${rankLine}</div>`);
+    return setView("res-none" + qid, `<div class="result no"><div class="stamp slam">Проспал</div><div class="note sticker tilt-r">Правильный ответ: <b>${U.L[q.c]}. ${esc(q.o[q.c])}</b></div>${rankLine}</div>`);
   }
 
   // ---- штрафы и бонусы ----
@@ -199,7 +193,7 @@
     al.className = "alert " + (neg ? "neg" : "pos");
     $("#alertBox").innerHTML = `<div class="em">${ev.e || (neg ? "⚠️" : "🌟")}</div><div class="d">${neg ? "−" + Math.abs(ev.d) : "+" + ev.d}</div>
       <h2>${esc(ev.r)}</h2><p>${neg ? "Преподаватель снял очки. Ещё можно отыграться!" : "Преподаватель начислил бонус!"}</p>
-      <button class="btn btn--dark" type="button" id="alOk">Понятно</button>`;
+      <button class="btn btn--blue" type="button" id="alOk">Понятно</button>`;
     al.hidden = false;
     neg ? SFX.penalty() : (SFX.bonus(), confetti(60));
     if (navigator.vibrate) try { navigator.vibrate(neg ? [250, 100, 250] : 60); } catch (_) {}
