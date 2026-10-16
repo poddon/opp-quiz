@@ -111,12 +111,12 @@
       if (m.ty === "ans" && G().phase === "question" && m.q === curQid() && !p.ans[m.q]) {
         const q = curQ(), a = Number.isInteger(m.a) ? m.a : -1;
         const el = (Date.now() - G().qStart) / 1000;
-        if (a >= 0 && a < q.o.length && el <= G().limit + 1.5) {
+        if (a >= 0 && a < q.o.length) {
           const ok = a === q.c;
-          const base = ok ? Math.round(CFG.maxPts * (1 - 0.5 * Math.min(1, el / G().limit))) : 0;
+          // без таймера: 1000 очков за мгновенный ответ, −10 за каждую секунду, но не меньше 500
+          const base = ok ? Math.max(CFG.maxPts / 2, Math.round(CFG.maxPts - 10 * el)) : 0;
           p.ans[m.q] = { a, ok, base, t: Math.round(el * 10) / 10 };
-          const n = answeredCount();
-          if (n >= Object.keys(S.players).length) setTimeout(() => { if (G().phase === "question") reveal(); }, 700);
+          if (answeredCount() >= Object.keys(S.players).length) { say("Все ответили! Жмите «Показать ответ»."); SFX.join(); }
         }
       }
       save(); publishPlayer(p); broadcast(); render();
@@ -196,30 +196,18 @@
       if (g.phase === "podium") { S.done[g.block] = true; return toLobby(); }
     }
     function setPhase(ph) { G().phase = ph; save(); broadcast(true); render(true); music(); phaseSay(); }
-    function toLobby() { clearInterval(qTimer); G().block = null; setPhase("lobby"); }
-    function openBlock(id) { if (!byId[id]) return; clearInterval(qTimer); Object.assign(G(), { block: +id, qi: 0 }); setPhase("intro"); }
+    function toLobby() {  G().block = null; setPhase("lobby"); }
+    function openBlock(id) { if (!byId[id]) return;  Object.assign(G(), { block: +id, qi: 0 }); setPhase("intro"); }
     function startQuestion(i) {
       const g = G(), b = curBlock();
-      g.qi = i; g.qStart = Date.now(); g.limit = CFG.limit(b.q[i]);
+      g.qi = i; g.qStart = Date.now();
       g.prev = Object.fromEntries(Object.values(S.players).map((p) => [p.key, p.score]));
       g.prevOrder = ranked().map((p) => p.key);
       setPhase("question");
-      runTimer();
-    }
-    function runTimer() {
-      clearInterval(qTimer);
-      let lastSec = -1;
-      qTimer = setInterval(() => {
-        const g = G(); if (g.phase !== "question") return clearInterval(qTimer);
-        const left = g.limit - (Date.now() - g.qStart) / 1000;
-        const sec = Math.max(0, Math.ceil(left));
-        if (sec !== lastSec) { lastSec = sec; updTimer(sec); if (sec <= 5 && sec > 0) SFX.tick(sec <= 3); }
-        if (left <= -0.3) reveal();
-      }, 200);
     }
     function reveal() {
       const g = G(); if (g.phase !== "question") return;
-      clearInterval(qTimer);
+      
       const qid = curQid();
       Object.values(S.players).forEach((p) => {
         const a = p.ans[qid];
@@ -254,8 +242,7 @@
         const g = G(), arr = ranked();
         net.pub(T_ST, {
           mid: U.mid(), ts: Date.now(), host: HOST_ID, sid: S.sid,
-          phase: g.phase, block: g.block, qi: g.qi, limit: g.limit,
-          left: g.phase === "question" ? Math.max(0, g.limit * 1000 - (Date.now() - g.qStart)) : null,
+          phase: g.phase, block: g.block, qi: g.qi,
           answered: g.phase === "question" ? answeredCount() : null, next: nextLabel(),
           board: arr.map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._r }))
         }, true);
@@ -266,7 +253,7 @@
 
     async function onAdm(m) {
       if (!m || !m.cmd || !m.sig || !m.n || !m.ts) return;
-      if (Math.abs(Date.now() - m.ts) > 5 * 60000 || usedN.has(m.n)) return;
+      if (usedN.has(m.n)) return;   // часы телефона и компьютера могут расходиться — время не сверяем
       if ((await U.sign(hkey, m.ts + "|" + m.n + "|" + JSON.stringify(m.cmd))) !== m.sig) return;
       usedN.set(m.n, 1);
       const c = m.cmd;
@@ -335,7 +322,7 @@
       stage.innerHTML = `<div class="intro"><div class="sunburst"></div><div class="e wobble">${b.emoji}</div>
         <span class="ribbon w rise">Практика · слайд ${b.id} · ${esc(b.topic)}</span>
         <h1 class="slam" style="animation-delay:.1s">${esc(b.title)}</h1>
-        <div class="facts sticker tilt-r rise" style="animation-delay:.3s">${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")} · до 1000 очков · чем быстрее, тем больше · 👥 <b id="introN">${Object.keys(S.players).length}</b></div></div>
+        <div class="facts sticker tilt-r rise" style="animation-delay:.3s">${b.q.length} ${U.plural(b.q.length, "вопрос", "вопроса", "вопросов")} · до 1000 очков · кто быстрее, тот богаче · 👥 <b id="introN">${Object.keys(S.players).length}</b></div></div>
         <div class="cornerqr sticker tilt-r"><div class="qr">${joinQR()}</div><div><b>Опоздал?</b><span>Сканируй и заходи</span></div></div>`;
     }
     function optsHTML(q, rev, voters) {
@@ -346,15 +333,9 @@
     }
     function drawQuestion(b) {
       const q = curQ(), g = G();
-      stage.innerHTML = `<div class="qtop"><div class="qbar sticker tilt-l slam">${esc(q.t)}</div><div class="timer" id="timer"><span id="tNum">${g.limit}</span></div></div>
+      stage.innerHTML = `<div class="qtop"><div class="qbar sticker tilt-l slam">${esc(q.t)}</div></div>
         <div class="qmeta"><span class="ribbon">${b.emoji} Вопрос ${g.qi + 1} из ${b.q.length}${q.p === 15 ? " · расчёт" : ""}</span><span class="cnt"><b id="ansN">${answeredCount()}</b> <span id="ansT">из ${Object.keys(S.players).length}</span> ответили</span></div>
         ${optsHTML(q, false)}`;
-      updTimer(Math.max(0, Math.ceil(g.limit - (Date.now() - g.qStart) / 1000)));
-    }
-    function updTimer(sec) {
-      const n = $("#tNum"); if (!n) return;
-      n.textContent = sec;
-      $("#timer").classList.toggle("hurry", sec <= 5);
     }
     function drawReveal(b) {
       const q = curQ(), qid = curQid();
@@ -457,7 +438,7 @@
       $("#rNo").onclick = () => m.hidden = true;
       $("#rYes").onclick = () => {
         const old = Object.values(S.players).flatMap((p) => p.pids);
-        S = fresh(); save(); m.hidden = true; clearInterval(qTimer);
+        S = fresh(); save(); m.hidden = true; 
         old.forEach((pid) => net.pub(T_PL(pid), { ts: Date.now(), sid: S.sid, key: "", name: "", score: 0, ans: {}, ev: [], streak: 0 }, true));
         broadcast(true); render(true); music(); toast("Новый урок начат");
       };
@@ -472,7 +453,6 @@
     window.addEventListener("resize", () => render(true));
 
     // восстановление после перезагрузки
-    if (G().phase === "question") { if (Date.now() - G().qStart > G().limit * 1000) reveal(); else runTimer(); }
     render(true); broadcast(true); phaseSay();
     document.addEventListener("pointerdown", () => { SFX.unlock(); music(); }, { once: true });
   }
@@ -483,10 +463,10 @@
     document.body.style.overflow = "auto";
     let st = null;
     net.sub(T_ST);
-    const alive = () => st && Date.now() - st.ts < 40000;
+    let stAt = 0; const alive = () => st && Date.now() - stAt < 35000;
     const upd = () => { const on = net.online; $("#pNetDot").classList.toggle("on", on > 0 && alive()); $("#pNet").textContent = !on ? "нет связи" : alive() ? "экран на связи" : "экран не отвечает"; };
     net.onStatus(upd); setInterval(upd, 3000);
-    net.on((t, m) => { if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; upd(); render(); } });
+    net.on((t, m) => { if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; stAt = Date.now(); upd(); render(); } });
     $("#pSearch").oninput = renderList; $("#pOut").onclick = logout;
 
     async function cmd(c, okText) {

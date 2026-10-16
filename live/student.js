@@ -19,7 +19,7 @@
   const net = new Net(CFG.brokers);
   const T_ST = CFG.topic("st"), T_UP = CFG.topic("up"), T_ME = CFG.topic("pl/" + prof.pid);
   net.sub(T_ST); net.sub(T_ME);
-  const hostAlive = () => st && Date.now() - st.ts < 40000;
+  const hostAlive = () => st && Date.now() - stAt < 35000;   // по времени получения, а не по часам компьютера
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
@@ -32,7 +32,6 @@
     if (topic === T_ST) {
       if (st && msg.ts < st.ts) return;
       const prev = st; st = msg; stAt = Date.now();
-      if (st.phase === "question" && typeof st.left === "number") deadline = Date.now() + st.left;
       if (prev && prev.sid !== st.sid && prof.name) { me = null; hello(); }
       netStatus(); render();
     } else if (topic === T_ME) {
@@ -118,7 +117,6 @@
     });
   }
 
-  let timerRaf = 0;
   function renderQuestion(b) {
     const q = b.q[st.qi], qid = U.qid(b.id, st.qi);
     const mine = (me && me.ans && me.ans[qid]) || pending[qid];
@@ -126,10 +124,7 @@
       return setView("ans" + qid, `<div class="center"><div class="opt pop" style="font-size:2.4rem;padding:14px;transform:rotate(-6deg)"><span class="L">${U.L[mine.a]}</span></div>
         <h1 class="slam">Ответ принят!</h1><div class="card sticker tilt-r"><p>Ждём остальных… Смотри на экран.</p></div></div>`);
     }
-    const left = deadline - Date.now();
-    if (left <= 0) return setView("late" + qid, `<div class="center"><div class="big wobble">⏰</div><h1 class="slam">Время вышло</h1></div>`);
-    const changed = setView("q" + qid, `
-      <div class="tline"><span class="ribbon">Вопрос ${st.qi + 1} из ${b.q.length}</span><span class="timer" id="tsec"></span></div>
+    setView("q" + qid, `
       <div class="qtext sticker tilt-l">${esc(q.t)}</div>
       <div class="opts">
         ${q.o.map((o, i) => `<button class="opt pop" style="animation-delay:${i * 70}ms" type="button" data-a="${i}"><span class="L">${U.L[i]}</span><span class="tx">${esc(o)}</span></button>`).join("")}
@@ -143,19 +138,6 @@
         view = ""; render();
       }));
     });
-    if (changed) {
-      cancelAnimationFrame(timerRaf);
-      const lim = (st.limit || 25) * 1000;
-      const tick = () => {
-        const l = Math.max(0, deadline - Date.now());
-        const s = $("#tsec");
-        if (!s || view !== "q" + qid) return;
-        s.textContent = Math.ceil(l / 1000); s.classList.toggle("hurry", l < 5000);
-        if (l <= 0) { view = ""; render(); return; }
-        timerRaf = requestAnimationFrame(tick);
-      };
-      tick();
-    }
   }
 
   function renderResult(b) {
@@ -177,15 +159,15 @@
   }
 
   // ---- штрафы и бонусы ----
-  const evQ = [];
+  const evQ = []; let firstMe = prof.seenEv.length === 0;
   function checkEvents() {
     if (!me || !me.ev) return;
     for (const ev of me.ev) {
       if (prof.seenEv.includes(ev.id)) continue;
       prof.seenEv.push(ev.id);
-      if (Date.now() - ev.t < 10 * 60000) evQ.push(ev);
+      if (!firstMe) evQ.push(ev);
     }
-    prof.seenEv = prof.seenEv.slice(-80); saveProf(); nextEv();
+    firstMe = false; prof.seenEv = prof.seenEv.slice(-80); saveProf(); nextEv();
   }
   function nextEv() {
     const al = $("#alert"); if (!al.hidden || !evQ.length) return;
@@ -207,6 +189,6 @@
   $("#bottom").addEventListener("pointerdown", () => { lp = setTimeout(() => { if (confirmSwitch()) { prof.name = ""; me = null; saveProf(); view = ""; render(); } }, 1200); });
   $("#bottom").addEventListener("pointerup", () => clearTimeout(lp));
   function confirmSwitch() { return true; }
-  setInterval(() => { if (st && (st.phase === "question")) render(); }, 1000);
+  setInterval(() => { netStatus(); if (st && !hostAlive()) render(); }, 3000);
   render();
 })();
