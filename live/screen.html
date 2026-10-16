@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Битва коммерсантов · экран</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&family=Rubik:wght@500;700;800;900&display=swap">
+<link rel="stylesheet" href="style.css?v=1">
+<style>
+  html, body { height: 100%; }
+  body { overflow-x: hidden; }
+
+  /* ---------- вход ---------- */
+  .login { min-height: 100%; display: grid; place-items: center; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); position: relative; z-index: 1; }
+  .login .card { width: min(100%, 420px); padding: 26px; display: grid; gap: 14px; }
+  .login .mascot { width: 120px; justify-self: center; }
+  .login h1 { font-size: 1.8rem; font-weight: 900; text-align: center; }
+  .login .err { color: var(--tomato); font-weight: 800; min-height: 1.3em; text-align: center; margin: 0; }
+  .roles { display: grid; gap: 12px; }
+  .role { display: flex; gap: 14px; align-items: center; text-align: left; padding: 16px; border: var(--line) solid var(--ink); border-radius: 16px; background: var(--white); box-shadow: var(--shadow-s); }
+  .role:hover { background: var(--sky); }
+  .role .em { font-size: 2.2rem; }
+  .role b { font-family: var(--f-display); font-size: 1.15rem; display: block; }
+  .role small { color: var(--muted); font-weight: 700; }
+
+  /* ---------- большой экран ---------- */
+  .host { position: relative; z-index: 1; height: 100%; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(10px, 1.4vw, 22px);
+    padding: clamp(10px, 1.4vw, 24px) max(16px, 1.6vw) clamp(10px, 1.2vw, 20px); font-size: clamp(14px, 1.05vw, 22px); }
+  .hbar { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; }
+  .hbar .mascot { width: 4.2em; }
+  .hbar h1 { font-size: 2.3em; font-weight: 900; line-height: .95; }
+  .hbar h1 span { color: var(--blue); }
+  .hbar .sub { font-weight: 800; color: var(--muted); font-size: .95em; }
+  .hbar .spacer { flex: 1; }
+  .hbar .pill { font-size: .85em; }
+  .tools { display: flex; gap: .5em; flex-wrap: wrap; }
+  .presenting .tools .adm, .presenting .adminbar, .presenting .qradm { display: none !important; }
+  .phint { display: none; font-weight: 800; color: var(--muted); font-size: .8em; }
+  .presenting .phint { display: inline; }
+
+  .hgrid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 26px); min-height: 0; }
+  .board { padding: 1.1em 1.2em; display: flex; flex-direction: column; gap: 1em; min-height: 0; overflow: hidden; }
+  .board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
+  .board-head h2 { font-size: 1.6em; font-weight: 900; }
+  .board-head .muted { color: var(--muted); font-weight: 800; }
+
+  .podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; align-items: end; gap: 1em; margin-top: 1.4em; }
+  .pod { position: relative; text-align: center; padding: 1.6em .8em .9em; border: var(--line) solid var(--ink); border-radius: 20px; box-shadow: var(--shadow); cursor: pointer; transition: transform .2s; }
+  .pod:hover { transform: translateY(-3px); }
+  .pod.p1 { background: var(--sun); padding-top: 2.2em; }
+  .pod.p2 { background: #DCE6FF; }
+  .pod.p3 { background: #F8D2A9; }
+  .pod .medal { position: absolute; top: -.95em; left: 50%; transform: translateX(-50%); font-size: 2.2em; filter: drop-shadow(2px 2px 0 var(--ink)); }
+  .pod.p1 .medal { font-size: 2.8em; top: -1.05em; animation: bob 2.4s ease-in-out infinite; }
+  .pod .avatar { margin: 0 auto .4em; width: 3.2em; height: 3.2em; font-size: 1.1em; }
+  .pod.p1 .avatar { width: 3.8em; height: 3.8em; }
+  .pod .nm { font-family: var(--f-display); font-weight: 800; font-size: 1.1em; line-height: 1.15; overflow-wrap: anywhere; }
+  .pod .sc { font-family: var(--f-display); font-weight: 900; font-size: 2.2em; font-variant-numeric: tabular-nums; }
+  .pod.p1 .sc { font-size: 2.8em; }
+  .pod .sm { font-weight: 800; font-size: .8em; color: var(--ink); opacity: .7; }
+  .pod.empty { opacity: .35; box-shadow: none; border-style: dashed; cursor: default; }
+
+  .rows { position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; column-gap: 1.2em; row-gap: .5em; align-content: start; min-height: 0; overflow: auto; padding: 4px 6px 6px 2px; }
+  .row { display: flex; align-items: center; gap: .7em; padding: .38em .7em .38em .45em; border: 2.5px solid var(--ink); border-radius: 14px; background: var(--white); box-shadow: 3px 3px 0 var(--ink); cursor: pointer; min-width: 0; }
+  .row:hover { background: var(--paper); }
+  .row .rk { flex: none; width: 2em; text-align: center; font-family: var(--f-display); font-weight: 900; color: var(--muted); }
+  .row .avatar { width: 2.1em; height: 2.1em; font-size: .85em; }
+  .row .nm { flex: 1; min-width: 0; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ok { flex: none; font-weight: 800; font-size: .8em; color: var(--muted); }
+  .row .sc { flex: none; font-family: var(--f-display); font-weight: 900; font-size: 1.2em; min-width: 2.6em; text-align: right; font-variant-numeric: tabular-nums; }
+  .flash-neg { animation: fneg 1.6s ease; }
+  .flash-pos { animation: fpos 1.2s ease; }
+  @keyframes fneg { 0%, 40% { background: var(--tomato); color: var(--white); transform: rotate(-1.5deg) scale(1.04); } 15%, 55% { transform: rotate(1.5deg) scale(1.04); } }
+  @keyframes fpos { 0%, 50% { background: var(--mint); transform: scale(1.04); } }
+  .delta-badge { position: absolute; right: -.4em; top: -.9em; font-family: var(--f-display); font-weight: 900; font-size: 1.3em; padding: 0 .4em; border-radius: 999px; border: 2.5px solid var(--ink); animation: floatbadge 1.6s ease-out forwards; z-index: 3; pointer-events: none; }
+  .delta-badge.pos { background: var(--mint); } .delta-badge.neg { background: var(--tomato); color: var(--white); }
+  @keyframes floatbadge { from { transform: translateY(8px) scale(.5); opacity: 0; } 15% { transform: none; opacity: 1; } 75% { opacity: 1; } to { transform: translateY(-18px); opacity: 0; } }
+  .row, .pod { position: relative; }
+
+  .board-empty { flex: 1; display: grid; place-items: center; text-align: center; gap: .6em; color: var(--muted); font-weight: 800; }
+  .board-empty .mascot { width: 8em; margin: 0 auto; }
+  .board-empty b { display: block; font-family: var(--f-display); font-size: 1.5em; color: var(--ink); }
+
+  .qrpanel { padding: 1.1em 1.2em; display: flex; flex-direction: column; gap: .8em; min-height: 0; overflow: auto; background: var(--blue); color: var(--white); }
+  .qrpanel .eyebrow { color: var(--sun); }
+  .qrpanel h2 { font-size: 1.6em; font-weight: 900; line-height: 1.05; }
+  .qrbox { background: var(--white); border: var(--line) solid var(--ink); border-radius: 18px; padding: .6em; box-shadow: var(--shadow); width: min(100%, 19em); align-self: center; transform: rotate(-1.5deg); }
+  .qrbox svg { display: block; width: 100%; height: auto; }
+  .qrurl { text-align: center; font-weight: 800; font-size: .9em; opacity: .9; overflow-wrap: anywhere; }
+  .prog { display: grid; gap: .35em; }
+  .prog .bar { height: 1.1em; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--blue-d); overflow: hidden; }
+  .prog .bar i { display: block; height: 100%; background: var(--sun); border-right: 2.5px solid var(--ink); transition: width .6s cubic-bezier(.2, 1.4, .4, 1); }
+  .prog .lbl { display: flex; justify-content: space-between; font-weight: 800; font-size: .9em; }
+  .qstats { display: grid; gap: .3em; }
+  .qstat { display: grid; grid-template-columns: 2.2em 1fr 3em; align-items: center; gap: .5em; font-weight: 800; font-size: .8em; }
+  .qstat .b { height: .8em; background: rgba(255,255,255,.18); border-radius: 999px; overflow: hidden; }
+  .qstat .b i { display: block; height: 100%; background: var(--mint); }
+  .qradm { display: flex; gap: .5em; flex-wrap: wrap; }
+  .qradm .btn { font-size: .8em; }
+
+  .ticker { display: flex; gap: .7em; overflow: hidden; align-items: center; min-height: 2.6em; }
+  .ticker .lab { flex: none; font-family: var(--f-display); font-weight: 900; color: var(--blue); }
+  .tick { flex: none; display: inline-flex; gap: .4em; align-items: center; padding: .3em .8em; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--white); font-weight: 800; white-space: nowrap; animation: slidein .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .tick.neg { background: #FFE1DC; } .tick.pos { background: #D7F7EA; } .tick.first { background: #FFF1C2; }
+  @keyframes slidein { from { transform: translateX(-30px); opacity: 0; } }
+
+  .adminbar { display: flex; gap: .5em; flex-wrap: wrap; align-items: center; padding: .6em .8em; border: 2.5px dashed var(--ink); border-radius: 16px; background: rgba(255,255,255,.7); font-size: .85em; }
+  .adminbar b { font-family: var(--f-display); margin-right: .3em; }
+  .chip { padding: .35em .75em; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--white); font-weight: 800; white-space: nowrap; }
+  .chip.on { background: var(--sun); box-shadow: 2px 2px 0 var(--ink); }
+  .chip.closed { text-decoration: line-through; opacity: .6; }
+
+  .banner { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 700; background: var(--tomato); color: var(--white); padding: .6em 1.2em; font-weight: 900; border: var(--line) solid var(--ink); border-radius: 14px; box-shadow: var(--shadow-s); }
+
+  /* событие на весь экран */
+  .epop { position: fixed; inset: 0; z-index: 650; display: grid; place-items: center; background: rgba(23, 32, 54, .55); pointer-events: none; animation: fadein .25s both; }
+  .epop.out { animation: fadeout .4s both; }
+  @keyframes fadein { from { opacity: 0; } } @keyframes fadeout { to { opacity: 0; } }
+  .epop .box { width: min(92vw, 44em); padding: 2em 2.2em; display: grid; grid-template-columns: auto 1fr; gap: 1.6em; align-items: center; font-size: clamp(14px, 1.2vw, 24px); animation: popin .55s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .epop.neg .box { background: #FFE1DC; } .epop.pos .box { background: #D7F7EA; }
+  .epop .mascot { width: 9em; }
+  .epop .em { font-size: 3em; line-height: 1; }
+  .epop .nm { font-family: var(--f-display); font-weight: 900; font-size: 2.4em; line-height: 1; margin: .15em 0; }
+  .epop .rs { font-weight: 800; font-size: 1.3em; }
+  .epop .dl { font-family: var(--f-display); font-weight: 900; font-size: 4.6em; line-height: 1; -webkit-text-stroke: 3px var(--ink); }
+  .epop.neg .dl { color: var(--tomato); } .epop.pos .dl { color: var(--mint); }
+
+  /* модальное окно игрока */
+  .modal { position: fixed; inset: 0; z-index: 680; display: grid; place-items: center; background: rgba(23, 32, 54, .5); padding: 16px; }
+  .modal .box { width: min(100%, 560px); max-height: calc(100% - 20px); overflow: auto; padding: 20px; display: grid; gap: 14px; font-size: 16px; }
+  .mhead { display: flex; align-items: center; gap: 12px; }
+  .mhead .avatar { width: 3em; height: 3em; }
+  .mhead b { font-family: var(--f-display); font-size: 1.35rem; display: block; line-height: 1.1; }
+  .mhead .x { margin-left: auto; width: 2.4em; height: 2.4em; border-radius: 50%; border: 2.5px solid var(--ink); background: var(--white); font-weight: 900; }
+  .vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .vbtn { display: grid; gap: 2px; justify-items: start; text-align: left; padding: 10px 12px; border: 2.5px solid var(--ink); border-radius: 14px; background: #FFE1DC; box-shadow: 3px 3px 0 var(--ink); font-weight: 800; }
+  .vbtn.pos { background: #D7F7EA; }
+  .vbtn .e { font-size: 1.6rem; line-height: 1; }
+  .vbtn .d { font-family: var(--f-display); font-weight: 900; }
+  .vbtn:active { transform: translate(3px, 3px); box-shadow: none; }
+  .custom { display: grid; grid-template-columns: 6em 1fr; gap: 8px; }
+  .custom input { padding: .6em .8em; border: 2.5px solid var(--ink); border-radius: 12px; font-weight: 700; width: 100%; min-width: 0; }
+  .hist { display: grid; gap: 6px; font-weight: 700; font-size: .9rem; }
+  .hist div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 10px; background: var(--paper); }
+  .mfoot { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+
+  /* ---------- пульт (телефон) ---------- */
+  .pult { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 14px; }
+  .pult .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pult h1 { font-size: 1.5rem; font-weight: 900; }
+  .pult select, .pult input[type=search] { width: 100%; padding: .7em .9em; border: var(--line) solid var(--ink); border-radius: 14px; background: var(--white); font-weight: 800; font-size: 1rem; }
+  .plist { display: grid; gap: 8px; }
+  .plist .row { font-size: 16px; }
+
+  @media (max-width: 900px) {
+    .hgrid { grid-template-columns: 1fr; }
+    .rows { grid-template-columns: 1fr; grid-auto-flow: row; overflow: visible; }
+    .host { height: auto; }
+    .board { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="shavings" aria-hidden="true"></div>
+
+<!-- Вход преподавателя -->
+<section class="login" id="v-login">
+  <form class="card sticker" id="loginForm">
+    <div class="bob" id="loginMascot"></div>
+    <h1>Вход для преподавателя</h1>
+    <div class="field"><label for="lg">Логин</label><input id="lg" autocomplete="username" required value=""></div>
+    <div class="field"><label for="pw">Пароль</label><input id="pw" type="password" autocomplete="current-password" required></div>
+    <p class="err" id="lgErr"></p>
+    <button class="btn btn--blue" type="submit">Войти</button>
+  </form>
+  <div class="card sticker" id="roleCard" hidden>
+    <h1>Что открываем?</h1>
+    <div class="roles">
+      <button class="role" type="button" data-role="host"><span class="em">🖥️</span><span><b>Большой экран</b><small>Рейтинг, QR-коды практик, штрафы. Откройте на компьютере у проектора — он хранит все очки.</small></span></button>
+      <button class="role" type="button" data-role="pult"><span class="em">📱</span><span><b>Пульт</b><small>Штрафы и бонусы с телефона, пока ходите по аудитории. Большой экран должен быть открыт.</small></span></button>
+    </div>
+  </div>
+</section>
+
+<!-- Большой экран -->
+<section class="host" id="v-host" hidden>
+  <header class="hbar">
+    <div class="bob" id="hostMascot"></div>
+    <div><h1>Битва <span>коммерсантов</span></h1><div class="sub">Модуль 3 · Коммерческая деятельность ОПП</div></div>
+    <div class="spacer"></div>
+    <span class="pill"><span class="dot" id="hNetDot"></span><span id="hNet">связь…</span></span>
+    <span class="pill">👥 <span id="hCount">0</span></span>
+    <span class="phint">P — панель управления</span>
+    <div class="tools">
+      <button class="btn btn--sm btn--ghost adm" type="button" id="bPresent" title="Клавиша P">👁 Режим показа</button>
+      <button class="btn btn--sm btn--ghost adm" type="button" id="bCsv">⬇ Таблица</button>
+      <button class="btn btn--sm btn--ghost adm" type="button" id="bReset">♻ Новый урок</button>
+      <button class="btn btn--sm btn--ghost adm" type="button" id="bOut">Выйти</button>
+    </div>
+  </header>
+  <main class="hgrid">
+    <section class="board sticker">
+      <div class="board-head"><h2>🏆 Рейтинг</h2><span class="muted" id="boardHint">нажмите на ученика, чтобы снять или добавить очки</span></div>
+      <div class="podium" id="podium"></div>
+      <div class="rows" id="rows"></div>
+      <div class="board-empty" id="boardEmpty"><div><div class="bob" id="emptyMascot"></div><b>Ждём первых игроков</b>Сканируйте QR-код справа</div></div>
+    </section>
+    <aside class="qrpanel sticker" id="qrpanel"></aside>
+  </main>
+  <div style="display:grid;gap:10px">
+    <div class="adminbar" id="adminbar"></div>
+    <footer class="ticker" id="ticker"><span class="lab">Лента:</span></footer>
+  </div>
+</section>
+
+<!-- Пульт -->
+<section class="pult" id="v-pult" hidden>
+  <div class="top">
+    <h1>📱 Пульт</h1>
+    <span class="pill"><span class="dot" id="pNetDot"></span><span id="pNet">связь…</span></span>
+  </div>
+  <div class="field"><label for="pActive">Практика на большом экране</label><select id="pActive"></select></div>
+  <input type="search" id="pSearch" placeholder="Поиск по фамилии" aria-label="Поиск по фамилии">
+  <div class="plist" id="plist"></div>
+  <button class="btn btn--ghost" type="button" id="pOut">Выйти</button>
+</section>
+
+<div class="modal" id="modal" hidden><div class="box sticker pop-in" id="modalBox"></div></div>
+<div class="toast-stack" id="toasts"></div>
+
+<script src="vendor/qrcode.js"></script>
+<script src="questions.js?v=1"></script>
+<script src="common.js?v=1"></script>
+<script src="screen.js?v=1"></script>
+</body>
+</html>
