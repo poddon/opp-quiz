@@ -214,15 +214,16 @@
         if (a && a.ok) { p.streak = (p.streak || 0) + 1; a.pts = a.base + Math.min(500, CFG.streakBonus * (p.streak - 1)); p.score += a.pts; }
         else { p.streak = 0; if (a) a.pts = 0; }
       });
-      SFX.music(null); SFX.gong();
+      SFX.music(null); SFX.sting("reveal");
       setPhase("reveal");
       Object.values(S.players).forEach(publishPlayer);
     }
     function toBoard() { setPhase("board"); }
-    function toPodium() { setPhase("podium"); SFX.roll(); setTimeout(() => confetti(180), 1500); }
+    function toPodium() { setPhase("podium"); SFX.sting("fanfare"); setTimeout(() => { if (G().phase === "podium") SFX.music("lobby"); }, 4500); setTimeout(() => confetti(180), 1500); }
     function music() {
       const ph = G().phase;
-      SFX.music(ph === "question" ? "question" : ph === "lobby" || ph === "intro" ? "lobby" : null);
+      if (ph === "podium") { SFX.music(null); return; }
+      SFX.music(ph === "question" ? "think" : ph === "reveal" ? null : "lobby");
     }
 
     // ---------- рассылка ----------
@@ -417,7 +418,7 @@
     $("#bRating").onclick = () => openOverlay("rating");
     $("#bPen").onclick = () => openOverlay("pen");
     $("#bPult").onclick = () => openOverlay("pult");
-    $("#bSound").onclick = () => { SFX.unlock(); SFX.muted = !SFX.muted; U.store.set("opp.muted", SFX.muted); $("#bSound").textContent = SFX.muted ? "🔇" : "🔊"; music(); };
+    $("#bSound").onclick = () => { SFX.unlock(); SFX.muted = !SFX.muted; U.store.set("opp.muted", SFX.muted); if (window.MUSIC) window.MUSIC.setMuted(SFX.muted); $("#bSound").textContent = SFX.muted ? "🔇" : "🔊"; music(); };
     $("#bMenu").onclick = (e) => { e.stopPropagation(); $("#menu").hidden = !$("#menu").hidden; };
     document.addEventListener("click", () => { $("#menu").hidden = true; });
     $("#mLobby").onclick = toLobby;

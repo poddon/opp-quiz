@@ -201,27 +201,11 @@
     muted: false,
     _mus: null,
     music(kind) {
-      clearInterval(this._mus); this._mus = null;
-      if (!kind || !actx) return;
-      const bpm = kind === "question" ? 150 : 104, step = 60000 / bpm / 2;
-      const lobby = [[220, 0, 330], [0, 440, 0], [262, 0, 392], [0, 523, 0], [196, 0, 294], [0, 392, 0], [247, 0, 370], [0, 494, 440]];
-      const quest = [[110, 880], [0, 0], [110, 0], [0, 880], [131, 0], [0, 880], [98, 0], [0, 988]];
-      let i = 0;
-      this._mus = setInterval(() => {
-        if (this.muted || !actx) return;
-        const pat = kind === "question" ? quest : lobby, row = pat[i % pat.length]; i++;
-        const t = actx.currentTime;
-        row.forEach((f, k) => {
-          if (!f) return;
-          const o = actx.createOscillator(), g = actx.createGain();
-          o.type = kind === "question" ? (k === 0 ? "sawtooth" : "square") : (k === 0 ? "triangle" : "sine");
-          o.frequency.value = f;
-          const v = kind === "question" ? (k === 0 ? .05 : .025) : (k === 0 ? .07 : .04);
-          g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0005, t + step / 1000 * 1.6);
-          o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + step / 1000 * 1.7);
-        });
-      }, step);
-    }
+      if (!actx || !window.MUSIC) return;
+      window.MUSIC.init(actx); window.MUSIC.setMuted(this.muted);
+      if (kind) window.MUSIC.play(kind); else window.MUSIC.stop();
+    },
+    sting(name) { if (actx && window.MUSIC && !this.muted) { window.MUSIC.init(actx); window.MUSIC.sting(name); } }
   };
   const _tone = SFX.tone.bind(SFX);
   SFX.tone = (seq, type, vol) => { if (!SFX.muted) _tone(seq, type, vol); };
