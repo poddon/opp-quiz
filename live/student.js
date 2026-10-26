@@ -23,7 +23,7 @@
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
-    $("#nettxt").textContent = !on ? "нет интернета" : hostAlive() ? "в игре" : "ждём преподавателя";
+    $("#nettxt").textContent = !on ? "переподключение…" : hostAlive() ? "на связи" : "ожидаем экран";
   }
   net.onStatus((on) => { netStatus(); if (on && prof.name) hello(); });
   setInterval(netStatus, 3000);
@@ -72,7 +72,9 @@
       $("#meScore").textContent = me ? me.score : 0;
     }
     if (!joined) return renderJoin();
-    if (!hostAlive()) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><div class="card sticker tilt-l"><h1>Ждём ведущего</h1><p>Как только преподаватель откроет большой экран, ты в игре.</p></div></div>`); }
+    if (!st) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><div class="card sticker tilt-l"><h1>Ожидание подключения</h1><p>Вопрос появится автоматически, когда преподаватель начнёт игру.</p></div></div>`); }
+    // Во время кратких обрывов не заменяем вопрос или результат экраном ожидания.
+    // Состояние связи показывается только в небольшой плашке наверху.
     const b = st.block ? byId[st.block] : null;
     $("#topL").textContent = b && st.phase !== "lobby" ? `${b.emoji} Слайд ${b.id}` + (st.phase === "intro" || st.phase === "podium" ? "" : ` · вопрос ${st.qi + 1} из ${b.q.length}`) : "Битва коммерсантов";
 
@@ -95,7 +97,7 @@
           () => { if (r && r.r <= 3 && !resultShown["pod" + st.block]) { resultShown["pod" + st.block] = 1; confetti(120); } });
       }
       default:
-        return setView("lobby", `<div class="center"><span class="ribbon w">Добро пожаловать</span><h1 class="slam">Ты в игре!</h1><div class="card sticker tilt-l pop"><p>Смотри на большой экран. Когда начнётся вопрос, здесь появятся варианты ответа.</p></div></div>`);
+        return setView("lobby", `<div class="center"><div class="card sticker" style="width:min(92%,420px);text-align:center;padding:1.4rem"><h1 style="font-size:clamp(1.2rem,5vw,1.7rem)">Ожидание вопроса</h1><p>Следующий вопрос появится здесь автоматически.</p></div></div>`);
     }
   }
 
