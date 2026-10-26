@@ -5,15 +5,21 @@
   const qs = new URLSearchParams(location.search);
   // Ссылки без ?room= сохраняют совместимость с первым классом.
   const roomId = qs.get("room") === "class2" ? "class2" : "class1";
+  const brokerNames = { emqx: "EMQX", hivemq: "HiveMQ", mosquitto: "Mosquitto" };
+  const requestedNet = qs.get("net");
+  const netId = Object.hasOwn(brokerNames, requestedNet) ? requestedNet : "emqx";
   const roomUrl = (page, id = roomId, pult = false) => {
     const url = new URL(page, new URL("./", location.href));
     url.searchParams.set("room", id === "class2" ? "class2" : "class1");
+    url.searchParams.set("net", netId);
     if (pult) url.searchParams.set("pult", "1");
     return url.href;
   };
 
   const CFG = {
     roomId,
+    netId,
+    netName: brokerNames[netId],
     roomName: roomId === "class2" ? "Учебный класс 2" : "Учебный класс 1",
     room: roomId === "class2" ? "m3-b8k3" : "m3-a7k2",
     base: "poddon-opp/live/v1",
@@ -21,16 +27,18 @@
     studentUrl: (id = roomId) => roomUrl("", id),
     screenUrl: (id = roomId, pult = false) => roomUrl("screen.html", id, pult),
     loginHash: "839471ac87f97a9ae4668ec270ef0a42f2f85c1befca094e6ae2998bc84ca324",
-    brokers: [
-      "wss://broker.emqx.io:8084/mqtt",
-      "wss://broker.hivemq.com:8884/mqtt",
-      "wss://test.mosquitto.org:8081/mqtt"
-    ],
+    // Один общий сервер для всех учеников и ведущего. Несвязанные публичные
+    // брокеры не обмениваются сообщениями между собой.
+    brokers: [{
+      emqx: "wss://broker.emqx.io:8084/mqtt",
+      hivemq: "wss://broker.hivemq.com:8884/mqtt",
+      mosquitto: "wss://test.mosquitto.org:8081/mqtt"
+    }[netId]],
     maxPts: 1000,                 // за верный ответ: от 500 (в последнюю секунду) до 1000 (мгновенно)
     streakBonus: 100,             // +100 за каждый верный подряд, максимум +500
     limit: (q) => (q.p === 15 ? 45 : 25)   // секунд на вопрос: расчётные — дольше
   };
-  if (qs.get("broker")) CFG.brokers = qs.get("broker").split(",");
+  // Резервный публичный брокер выбирается ведущим; QR код передаёт тот же net.
   CFG.topic = (s) => `${CFG.base}/${CFG.room}/${s}`;
 
   /* ---------- Минимальный MQTT 3.1.1 клиент поверх WebSocket ---------- */
