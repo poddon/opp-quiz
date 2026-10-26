@@ -94,7 +94,7 @@
       this.retry = Math.min(Math.round(this.retry * 1.6), 12000);
     }
     wake(force = false) {
-      if (!force && this.up && this.ws && this.ws.readyState === 1 && Date.now() - this.lastRx < 50000) return;
+      if (!force && this.up && this.ws && this.ws.readyState === 1) return;
       const old = this.ws;
       clearTimeout(this.timer); this.timer = null;
       clearTimeout(this.cto); clearInterval(this.ping);
@@ -176,9 +176,9 @@
     constructor(urls) {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
       this.links = urls.map((u) => new Link(u, this));
-      window.addEventListener("online", () => this.reconnect(true));
+      window.addEventListener("online", () => this.reconnect());
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) this.reconnect(true);
+        if (!document.hidden) this.reconnect();
       });
     }
     get online() { return this.links.filter((l) => l.up).length; }
