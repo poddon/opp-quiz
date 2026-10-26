@@ -30,37 +30,75 @@
   class Link {
     constructor(url, owner) {
       this.url = url; this.owner = owner; this.ws = null; this.up = false;
-      this.buf = new Uint8Array(0); this.pid = 1; this.retry = 1000; this.timer = null;
+      this.buf = new Uint8Array(0); this.pid = 1;
+      this.retry = 900; this.timer = null; this.cto = null; this.ping = null;
+      this.lastRx = 0;
       this.open();
     }
     open() {
+      clearTimeout(this.timer); this.timer = null;
+      clearTimeout(this.cto); clearInterval(this.ping);
       let ws;
-      try { ws = new WebSocket(this.url, ["mqtt"]); } catch (e) { return this.later(); }
+      try { ws = new WebSocket(this.url, ["mqtt"]); }
+      catch (_) { this.later(); return; }
       this.ws = ws; ws.binaryType = "arraybuffer";
+      this.buf = new Uint8Array(0);
       const cid = "opp" + Math.random().toString(36).slice(2, 12);
       ws.onopen = () => {
-        const body = [...strBytes("MQTT"), 4, 2, 0, 40, ...strBytes(cid)];
-        ws.send(packet(0x10, body));
+        if (this.ws !== ws) return;
+        try {
+          const body = [...strBytes("MQTT"), 4, 2, 0, 45, ...strBytes(cid)];
+          ws.send(packet(0x10, body));
+        } catch (_) { ws.close(); }
       };
-      ws.onmessage = (ev) => this.feed(new Uint8Array(ev.data));
-      ws.onclose = () => { this.setUp(false); this.later(); };
+      ws.onmessage = (ev) => {
+        if (this.ws !== ws) return;
+        this.lastRx = Date.now();
+        this.feed(new Uint8Array(ev.data));
+      };
+      ws.onclose = () => {
+        if (this.ws !== ws) return;
+        clearTimeout(this.cto); clearInterval(this.ping);
+        this.setUp(false);
+        this.later();
+      };
       ws.onerror = () => { try { ws.close(); } catch (_) {} };
-      clearTimeout(this.cto);
-      this.cto = setTimeout(() => { if (!this.up) { try { ws.close(); } catch (_) {} } }, 9000);
+      this.cto = setTimeout(() => {
+        if (this.ws === ws && !this.up) try { ws.close(); } catch (_) {}
+      }, 7000);
     }
     later() {
-      clearInterval(this.ping);
       if (this.timer) return;
-      this.timer = setTimeout(() => { this.timer = null; this.open(); }, this.retry);
-      this.retry = Math.min(this.retry * 1.7, 15000);
+      const delay = this.retry + Math.round(Math.random() * 400);
+      this.timer = setTimeout(() => { this.timer = null; this.open(); }, delay);
+      this.retry = Math.min(Math.round(this.retry * 1.6), 12000);
+    }
+    wake() {
+      if (this.up && this.ws && this.ws.readyState === 1 && Date.now() - this.lastRx < 50000) return;
+      const old = this.ws;
+      clearTimeout(this.timer); this.timer = null;
+      clearTimeout(this.cto); clearInterval(this.ping);
+      this.setUp(false);
+      this.retry = 900;
+      this.open();
+      if (old) try { old.close(); } catch (_) {}
     }
     setUp(v) { if (this.up !== v) { this.up = v; this.owner._status(); } }
     feed(chunk) {
-      const b = new Uint8Array(this.buf.length + chunk.length); b.set(this.buf); b.set(chunk, this.buf.length); this.buf = b;
+      if (this.buf.length + chunk.length > 1048576) {
+        try { this.ws.close(); } catch (_) {}
+        return;
+      }
+      const b = new Uint8Array(this.buf.length + chunk.length);
+      b.set(this.buf); b.set(chunk, this.buf.length); this.buf = b;
       for (;;) {
         if (this.buf.length < 2) return;
         let mul = 1, len = 0, i = 1, byte;
-        do { if (i >= this.buf.length) return; byte = this.buf[i++]; len += (byte & 127) * mul; mul *= 128; } while (byte & 128);
+        do {
+          if (i >= this.buf.length) return;
+          byte = this.buf[i++]; len += (byte & 127) * mul; mul *= 128;
+          if (i > 5) { try { this.ws.close(); } catch (_) {} return; }
+        } while (byte & 128);
         if (this.buf.length < i + len) return;
         const type = this.buf[0], body = this.buf.slice(i, i + len);
         this.buf = this.buf.slice(i + len);
@@ -69,17 +107,24 @@
     }
     handle(type, body) {
       const t = type >> 4;
-      if (t === 2) { // CONNACK
-        if (body[1] === 0) {
-          this.retry = 1000; this.setUp(true);
+      if (t === 2) {
+        if (body.length >= 2 && body[1] === 0) {
+          clearTimeout(this.cto);
+          this.retry = 900; this.setUp(true);
           const topics = [...this.owner.subs];
           if (topics.length) this.subscribe(topics);
           clearInterval(this.ping);
-          this.ping = setInterval(() => this.raw(new Uint8Array([0xC0, 0])), 20000);
+          this.ping = setInterval(() => {
+            if (Date.now() - this.lastRx > 65000) {
+              try { this.ws.close(); } catch (_) {}
+            } else this.raw(new Uint8Array([0xC0, 0]));
+          }, 18000);
         } else { try { this.ws.close(); } catch (_) {} }
-      } else if (t === 3) { // PUBLISH
+      } else if (t === 3) {
+        if (body.length < 2) return;
         const qos = (type >> 1) & 3, retain = type & 1;
         const tl = (body[0] << 8) | body[1];
+        if (body.length < 2 + tl) return;
         const topic = dec.decode(body.slice(2, 2 + tl));
         let off = 2 + tl; if (qos > 0) off += 2;
         const payload = body.slice(off);
@@ -88,7 +133,12 @@
         this.owner._msg(topic, obj, !!retain);
       }
     }
-    raw(bytes) { if (this.ws && this.ws.readyState === 1) { try { this.ws.send(bytes); return true; } catch (_) {} } return false; }
+    raw(bytes) {
+      if (this.ws && this.ws.readyState === 1 && this.up) {
+        try { this.ws.send(bytes); return true; } catch (_) {}
+      }
+      return false;
+    }
     subscribe(topics) {
       if (!this.up) return;
       const id = this.pid++ & 0xffff || 1;
@@ -106,6 +156,10 @@
     constructor(urls) {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
       this.links = urls.map((u) => new Link(u, this));
+      window.addEventListener("online", () => this.reconnect());
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) this.reconnect();
+      });
     }
     get online() { return this.links.filter((l) => l.up).length; }
     get total() { return this.links.length; }
@@ -115,14 +169,18 @@
       let ok = 0; this.links.forEach((l) => { if (l.publish(topic, payload, retain)) ok++; });
       return ok;
     }
+    reconnect() { this.links.forEach((l) => l.wake()); }
     on(fn) { this.handlers.push(fn); }
     onStatus(fn) { this.statusFns.push(fn); fn(this.online, this.total); }
     _status() { this.statusFns.forEach((f) => f(this.online, this.total)); }
     _msg(topic, obj, retained) {
-      if (obj && obj.mid) {           // одно и то же сообщение приходит с нескольких брокеров
+      if (obj && obj.mid) {
         if (this.seen.has(obj.mid)) return;
         this.seen.set(obj.mid, Date.now());
-        if (this.seen.size > 3000) { const cut = Date.now() - 600000; for (const [k, v] of this.seen) if (v < cut) this.seen.delete(k); }
+        if (this.seen.size > 500) {
+          const cut = Date.now() - 120000;
+          for (const [k, v] of this.seen) if (v < cut) this.seen.delete(k);
+        }
       }
       this.handlers.forEach((h) => h(topic, obj, retained));
     }
