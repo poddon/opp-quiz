@@ -351,7 +351,7 @@
       const nx = nextUndone();
       stage.innerHTML = `<div class="lobby">
         <div class="joincol"><div class="logo slam">Битва<span>коммерсантов</span></div>
-          <div class="joincard sticker tilt-l rise"><span class="ribbon">Наведи камеру</span><div class="qr">${joinQR()}</div><div class="url">${esc(U.joinUrl().replace(/^https?:\/\//, ""))}</div></div></div>
+          <div class="joincard sticker tilt-l rise"><span class="ribbon">Наведи камеру</span><div class="qr">${joinQR()}</div></div></div>
         <div class="rightcol">
           <div class="phead"><span class="ribbon w">Игроки: <span id="lobN">0</span></span></div>
           <div class="slots" id="slots"></div>
