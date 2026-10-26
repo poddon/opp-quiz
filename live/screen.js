@@ -21,6 +21,7 @@
   function bindNetworkSelect() {
     const select = $("#hostNetwork");
     if (!select) return;
+    if (CFG.localMode) { select.hidden = true; return; }
     select.value = CFG.netId;
     select.addEventListener("change", () => {
       if (select.value === CFG.netId) return;
