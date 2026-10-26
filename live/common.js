@@ -73,8 +73,8 @@
       this.timer = setTimeout(() => { this.timer = null; this.open(); }, delay);
       this.retry = Math.min(Math.round(this.retry * 1.6), 12000);
     }
-    wake() {
-      if (this.up && this.ws && this.ws.readyState === 1 && Date.now() - this.lastRx < 50000) return;
+    wake(force = false) {
+      if (!force && this.up && this.ws && this.ws.readyState === 1 && Date.now() - this.lastRx < 50000) return;
       const old = this.ws;
       clearTimeout(this.timer); this.timer = null;
       clearTimeout(this.cto); clearInterval(this.ping);
@@ -156,9 +156,9 @@
     constructor(urls) {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
       this.links = urls.map((u) => new Link(u, this));
-      window.addEventListener("online", () => this.reconnect());
+      window.addEventListener("online", () => this.reconnect(true));
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) this.reconnect();
+        if (!document.hidden) this.reconnect(true);
       });
     }
     get online() { return this.links.filter((l) => l.up).length; }
@@ -169,7 +169,7 @@
       let ok = 0; this.links.forEach((l) => { if (l.publish(topic, payload, retain)) ok++; });
       return ok;
     }
-    reconnect() { this.links.forEach((l) => l.wake()); }
+    reconnect(force = false) { this.links.forEach((l) => l.wake(force)); }
     on(fn) { this.handlers.push(fn); }
     onStatus(fn) { this.statusFns.push(fn); fn(this.online, this.total); }
     _status() { this.statusFns.forEach((f) => f(this.online, this.total)); }
