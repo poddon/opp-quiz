@@ -10,35 +10,28 @@
   const fmtD = (d) => (d < 0 ? "−" + Math.abs(d) : "+" + d);
   const pts = (n) => n + " " + U.plural(Math.abs(n), "очко", "очка", "очков");
 
-  let password = null, hkey = null, net = null;
-
-  // фон
+  let hkey = null, net = null;
 
   function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("#toasts").appendChild(d); setTimeout(() => d.remove(), 2600); }
 
-  // ============================ ВХОД ============================
-  if (isPult) $("#loginSub").textContent = "Пульт ведущего (телефон)";
-  async function okPw(pw) { return (await U.sha256hex("opp-login|" + pw)) === CFG.loginHash; }
-  (async () => {
-    const saved = U.store.get("opp.adm2", null);
-    if (saved && await okPw(saved)) { password = saved; start(); }
-  })();
-  $("#loginForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); SFX.unlock();
-    if ($("#lg").value.trim().toLowerCase() !== "admin" || !(await okPw($("#pw").value))) {
-      $("#lgErr").textContent = "Неверный логин или пароль";
-      const f = $("#loginForm"); f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake"); return;
-    }
-    password = $("#pw").value; U.store.set("opp.adm2", password); start();
-  });
-  function logout() { U.store.del("opp.adm2"); location.href = location.pathname + (isPult ? "?pult=1" : ""); }
+  // Вход ведущего и пульта без логина и пароля.
+  // Общий ключ нужен только для совместимости команд пульта с большим экраном:
+  // доступ к управлению теперь публичный и не защищён авторизацией.
+  function logout() { location.href = "./"; }
 
   async function start() {
-    hkey = await U.hmacKey(password);
+    hkey = await U.hmacKey("opp-public-host-v1");
     $("#v-login").hidden = true;
     net = new Net(CFG.brokers);
     isPult ? startPult() : startHost();
   }
+
+  document.addEventListener("pointerdown", () => SFX.unlock(), { once: true });
+  start().catch((err) => {
+    console.error("Ошибка запуска экрана ведущего:", err);
+    const el = $("#loadingStatus");
+    if (el) el.textContent = "Не удалось открыть экран. Обновите страницу.";
+  });
 
   // ============== окно ученика: штрафы и бонусы (общее для экрана и пульта) ==============
   function openPlayer(p, onAdj, extra = {}) {
