@@ -114,3 +114,16 @@ h1, h2, h3 { margin: 0; font-family: var(--f-d); font-weight: 800; text-wrap: ba
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
+
+
+/* На телефонах уменьшаем постоянную анимацию фона и тяжёлые эффекты,
+   чтобы интерфейс не тормозил на слабых устройствах. */
+@media (max-width: 700px) {
+  .bg { inset: 0; animation: none; background: linear-gradient(135deg, var(--blue), #1A47F0); }
+  .bg::after { background-size: 30px 30px; }
+  .sunburst { animation: none; }
+  .wobble, .pulse { animation: none; }
+  .pop, .slam, .rise, .shake { animation-duration: .18s; }
+  .sticker, .opt, .btn { box-shadow: 3px 3px 0 var(--navy); }
+  .opt.right { box-shadow: 0 0 0 3px var(--navy); }
+}
