@@ -24,6 +24,8 @@
   .bar { display: flex; align-items: center; gap: .6em; padding: .8em max(16px, 1.4em) .2em; flex-wrap: wrap; }
   .bar .logo { font-size: 1.25em; text-shadow: 1px 1px 0 var(--navy), 2px 2px 0 var(--navy), 3px 3px 0 var(--navy); }
   .bar .sp { flex: 1; }
+  .room-select { padding: .55em .7em; border: 3px solid var(--navy); border-radius: 10px; background: var(--white); color: var(--navy); font: inherit; font-weight: 800; font-size: .82em; max-width: 100%; cursor: pointer; }
+  .pult .room-select { width:100%; min-height:44px; font-size:1rem; }
   .bar .pill { font-size: .8em; }
   .ib { display: inline-flex; align-items: center; gap: .4em; padding: .55em .9em; border-radius: 10px; background: var(--white); color: var(--navy); border: 3px solid var(--navy); box-shadow: 3px 3px 0 var(--navy); font-weight: 800; font-size: .8em; }
   .ib:hover { transform: translate(-1px, -1px); }
@@ -202,6 +204,10 @@
 <section class="scr" id="v-host" hidden>
   <div class="bar">
     <div class="logo">Битва коммерсантов</div>
+    <select class="room-select" id="hostRoom" aria-label="Выберите учебный класс">
+      <option value="class1">Учебный класс 1</option>
+      <option value="class2">Учебный класс 2</option>
+    </select>
     <div class="sp"></div>
     <span class="pill"><span class="dot" id="hNetDot"></span><span id="hNet">связь…</span></span>
     <span class="pill">👥 <span id="hCount">0</span></span>
@@ -225,6 +231,10 @@
 <section class="scr" id="v-pult" hidden>
   <div class="pult">
     <div class="row1"><h1 class="logo">📱 Пульт</h1><span class="pill"><span class="dot" id="pNetDot"></span><span id="pNet">связь…</span></span></div>
+    <select class="room-select" id="pultRoom" aria-label="Выберите учебный класс для пульта">
+      <option value="class1">Учебный класс 1</option>
+      <option value="class2">Учебный класс 2</option>
+    </select>
     <div class="pnow sticker" id="pNow"></div>
     <div id="pBlocks"></div>
     <input type="search" id="pSearch" placeholder="Найти ученика для штрафа или бонуса" aria-label="Найти ученика">
@@ -239,8 +249,8 @@
 
 <script src="vendor/qrcode.js"></script>
 <script src="questions.js?v=6"></script>
-<script src="common.js?v=6"></script>
+<script src="common.js?v=7"></script>
 <script src="music.js?v=5"></script>
-<script src="screen.js?v=8"></script>
+<script src="screen.js?v=9"></script>
 </body>
 </html>
