@@ -100,18 +100,39 @@
 
     function onUp(m) {
       if (!m || typeof m !== "object" || typeof m.name !== "string") return;
-      const p = ensure(m.name, m.pid); if (!p) return;
-      if (m.ty === "ans" && G().phase === "question" && m.q === curQid() && !p.ans[m.q]) {
-        const q = curQ(), a = Number.isInteger(m.a) ? m.a : -1;
-        const el = (Date.now() - G().qStart) / 1000;
-        if (a >= 0 && a < q.o.length) {
-          const ok = a === q.c;
-          // без таймера: 1000 очков за мгновенный ответ, −10 за каждую секунду, но не меньше 500
-          const base = ok ? Math.max(CFG.maxPts / 2, Math.round(CFG.maxPts - 10 * el)) : 0;
-          p.ans[m.q] = { a, ok, base, t: Math.round(el * 10) / 10 };
-          if (answeredCount() >= Object.keys(S.players).length) { say("Все ответили! Жмите «Показать ответ»."); SFX.join(); }
+      const key = U.normName(m.name);
+      const before = S.players[key];
+      const hadPid = !!(before && (!m.pid || before.pids.includes(m.pid)));
+      const p = ensure(m.name, m.pid);
+      if (!p) return;
+      let changed = !before || (!!m.pid && !hadPid);
+
+      // Повторные сигналы присутствия не должны перерисовывать весь экран.
+      if (m.ty === "join") {
+        publishPlayer(p);
+        if (changed) { save(); broadcast(); render(); }
+        return;
+      }
+
+      if (m.ty === "ans") {
+        // Подтверждаем уже принятый ответ, чтобы телефон прекратил повторную отправку.
+        if (p.ans[m.q]) { publishPlayer(p); return; }
+        if (G().phase === "question" && m.q === curQid()) {
+          const q = curQ(), answer = Number.isInteger(m.a) ? m.a : -1;
+          const elapsed = (Date.now() - G().qStart) / 1000;
+          if (q && answer >= 0 && answer < q.o.length) {
+            const ok = answer === q.c;
+            const base = ok ? Math.max(CFG.maxPts / 2, Math.round(CFG.maxPts - 10 * elapsed)) : 0;
+            p.ans[m.q] = { a: answer, ok, base, t: Math.round(elapsed * 10) / 10 };
+            changed = true;
+            if (answeredCount() >= Object.keys(S.players).length) {
+              say("Все ответили! Жмите «Показать ответ».");
+              SFX.join();
+            }
+          }
         }
       }
+      if (!changed) return;
       save(); publishPlayer(p); broadcast(); render();
     }
     const answeredCount = () => Object.values(S.players).filter((p) => p.ans[curQid()]).length;
