@@ -18,6 +18,21 @@
   // Общий ключ нужен только для совместимости команд пульта с большим экраном:
   // доступ к управлению теперь публичный и не защищён авторизацией.
   function logout() { location.href = CFG.studentUrl(); }
+  function bindNetworkSelect() {
+    const select = $("#hostNetwork");
+    if (!select) return;
+    select.value = CFG.netId;
+    select.addEventListener("change", () => {
+      if (select.value === CFG.netId) return;
+      if (!confirm("При смене сервера связи студенты должны заново открыть QR-код. Переключить сервер?")) {
+        select.value = CFG.netId;
+        return;
+      }
+      const url = new URL(CFG.screenUrl(CFG.roomId, false));
+      url.searchParams.set("net", select.value);
+      location.href = url.href;
+    });
+  }
   function bindRoomSelect(selector, usePult) {
     const el = $(selector);
     if (!el) return;
@@ -67,6 +82,7 @@
   // ============================ ВЕДУЩИЙ (большой экран) ============================
   function startHost() {
     bindRoomSelect("#hostRoom", false);
+    bindNetworkSelect();
     const HOST_ID = "h" + U.mid(), started = Date.now();
     const LS = "opp.host2." + CFG.room;
     const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, done: {}, g: { phase: "lobby", block: null, qi: 0, qStart: 0, limit: 25, prev: {}, prevOrder: [] } });
@@ -92,7 +108,7 @@
     $("#bSound").textContent = SFX.muted ? "🔇" : "🔊";
     $("#v-host").hidden = false;
 
-    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = on ? `связь ${on}/${tot}` : "нет связи"; if (on) broadcast(true); });
+    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = on ? `${CFG.netName} · подключено` : `${CFG.netName} · нет связи`; if (on) broadcast(true); });
     net.sub(T_UP); net.sub(T_ADM); net.sub(T_ST);
     net.on((topic, m) => {
       if (topic === T_UP) onUp(m);
