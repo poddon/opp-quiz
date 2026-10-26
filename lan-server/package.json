@@ -1,0 +1,12 @@
+{
+  "name": "opp-quiz-lan-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Wi-Fi server for the OPP classroom quiz",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
