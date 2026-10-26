@@ -8,7 +8,7 @@
     room: "m3-a7k2",                                 // комната урока: все устройства должны совпадать
     base: "poddon-opp/live/v1",
     joinUrl: new URL("./", location.href).href.split("?")[0].replace(/screen\.html$/, ""),
-    loginHash: "c6b4a57fd3fb3d03ab3830d1355f7947ccd3df81717ed8f0c6d87ef5b9ba7967",
+    loginHash: "839471ac87f97a9ae4668ec270ef0a42f2f85c1befca094e6ae2998bc84ca324",
     brokers: [
       "wss://broker.emqx.io:8084/mqtt",
       "wss://broker.hivemq.com:8884/mqtt",
