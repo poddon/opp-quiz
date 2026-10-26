@@ -17,7 +17,16 @@
   // Вход ведущего и пульта без логина и пароля.
   // Общий ключ нужен только для совместимости команд пульта с большим экраном:
   // доступ к управлению теперь публичный и не защищён авторизацией.
-  function logout() { location.href = "./"; }
+  function logout() { location.href = CFG.studentUrl(); }
+  function bindRoomSelect(selector, usePult) {
+    const el = $(selector);
+    if (!el) return;
+    el.value = CFG.roomId;
+    el.addEventListener("change", () => {
+      if (el.value === CFG.roomId) return;
+      location.href = CFG.screenUrl(el.value, usePult);
+    });
+  }
 
   async function start() {
     hkey = await U.hmacKey("opp-public-host-v1");
@@ -57,6 +66,7 @@
 
   // ============================ ВЕДУЩИЙ (большой экран) ============================
   function startHost() {
+    bindRoomSelect("#hostRoom", false);
     const HOST_ID = "h" + U.mid(), started = Date.now();
     const LS = "opp.host2." + CFG.room;
     const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, done: {}, g: { phase: "lobby", block: null, qi: 0, qStart: 0, limit: 25, prev: {}, prevOrder: [] } });
@@ -420,10 +430,10 @@
       ovKind = kind;
       const ov = $("#ov"); ov.hidden = false;
       if (kind === "pult") {
-        const url = CFG.joinUrl + "screen.html?pult=1";
+        const url = CFG.screenUrl(CFG.roomId, true);
         ov.innerHTML = `<div class="ovhead"><h2>📱 Пульт на телефоне</h2><button class="btn" type="button" data-close>Закрыть</button></div>
           <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(80vw,22em)">${U.qrSvg(url)}</div>
-          <p style="max-width:40ch;font-weight:700;color:var(--dim);margin:0">Отсканируйте своим телефоном и войдите тем же логином и паролем. С пульта можно листать вопросы («Далее»), открывать практики и ставить штрафы и бонусы, не подходя к компьютеру.</p></div>`;
+          <p style="max-width:40ch;font-weight:700;color:var(--dim);margin:0">Пульт управления: ${esc(CFG.roomName)}. Отсканируйте QR-код телефоном. Пароль не нужен. Можно листать вопросы и управлять баллами именно этого класса.</p></div>`;
       } else {
         const rating = kind === "rating";
         ov.innerHTML = `<div class="ovhead"><h2>${rating ? "🏆 Общий рейтинг" : "⚠️ Кому штраф или бонус?"}</h2><input type="search" id="ovQ" placeholder="Поиск по фамилии" aria-label="Поиск по фамилии"><button class="btn" type="button" data-close>Закрыть</button></div><div class="ovbody"><div class="plgrid" id="ovList"></div></div>`;
@@ -457,7 +467,7 @@
       ranked().forEach((p) => { const a = Object.values(p.ans); rows.push([p._r, p.name, p.score, a.filter((x) => x.ok).length, a.length, p.ev.filter((e) => e.d < 0).reduce((s, e) => s + e.d, 0), p.ev.filter((e) => e.d > 0).reduce((s, e) => s + e.d, 0)]); });
       const csv = "﻿" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n");
       const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      a.download = "Битва_коммерсантов_" + new Date().toLocaleDateString("ru-RU").replace(/\./g, "-") + ".csv";
+      a.download = "Битва_коммерсантов_" + CFG.roomName.replace(/ /g, "_") + "_" + new Date().toLocaleDateString("ru-RU").replace(/\./g, "-") + ".csv";
       document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     };
     $("#mReset").onclick = () => {
@@ -489,6 +499,7 @@
 
   // ============================ ПУЛЬТ (телефон) ============================
   function startPult() {
+    bindRoomSelect("#pultRoom", true);
     $("#v-pult").hidden = false;
     document.body.style.overflow = "auto";
     let st = null;
