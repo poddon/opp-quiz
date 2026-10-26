@@ -3,11 +3,23 @@
   "use strict";
 
   const qs = new URLSearchParams(location.search);
+  // Ссылки без ?room= сохраняют совместимость с первым классом.
+  const roomId = qs.get("room") === "class2" ? "class2" : "class1";
+  const roomUrl = (page, id = roomId, pult = false) => {
+    const url = new URL(page, new URL("./", location.href));
+    url.searchParams.set("room", id === "class2" ? "class2" : "class1");
+    if (pult) url.searchParams.set("pult", "1");
+    return url.href;
+  };
 
   const CFG = {
-    room: "m3-a7k2",                                 // комната урока: все устройства должны совпадать
+    roomId,
+    roomName: roomId === "class2" ? "Учебный класс 2" : "Учебный класс 1",
+    room: roomId === "class2" ? "m3-b8k3" : "m3-a7k2",
     base: "poddon-opp/live/v1",
-    joinUrl: new URL("./", location.href).href.split("?")[0].replace(/screen\.html$/, ""),
+    joinUrl: roomUrl(""),
+    studentUrl: (id = roomId) => roomUrl("", id),
+    screenUrl: (id = roomId, pult = false) => roomUrl("screen.html", id, pult),
     loginHash: "839471ac87f97a9ae4668ec270ef0a42f2f85c1befca094e6ae2998bc84ca324",
     brokers: [
       "wss://broker.emqx.io:8084/mqtt",
