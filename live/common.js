@@ -5,21 +5,30 @@
   const qs = new URLSearchParams(location.search);
   // Ссылки без ?room= сохраняют совместимость с первым классом.
   const roomId = qs.get("room") === "class2" ? "class2" : "class1";
+  const localMode = qs.get("lan") === "1";
   const brokerNames = { emqx: "EMQX", hivemq: "HiveMQ", mosquitto: "Mosquitto" };
   const requestedNet = qs.get("net");
   const netId = Object.hasOwn(brokerNames, requestedNet) ? requestedNet : "emqx";
   const roomUrl = (page, id = roomId, pult = false) => {
     const url = new URL(page, new URL("./", location.href));
     url.searchParams.set("room", id === "class2" ? "class2" : "class1");
-    url.searchParams.set("net", netId);
+    if (localMode) {
+      url.searchParams.set("lan", "1");
+      url.searchParams.delete("net");
+    } else {
+      url.searchParams.set("net", netId);
+      url.searchParams.delete("lan");
+    }
     if (pult) url.searchParams.set("pult", "1");
     return url.href;
   };
 
   const CFG = {
     roomId,
+    localMode,
+    localWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws",
     netId,
-    netName: brokerNames[netId],
+    netName: localMode ? "Локальная сеть" : brokerNames[netId],
     roomName: roomId === "class2" ? "Учебный класс 2" : "Учебный класс 1",
     room: roomId === "class2" ? "m3-b8k3" : "m3-a7k2",
     base: "poddon-opp/live/v1",
@@ -175,21 +184,63 @@
   class Net {
     constructor(urls) {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
-      this.links = urls.map((u) => new Link(u, this));
+      this.local = CFG.localMode; this.ws = null; this.localUp = false; this.localTimer = null;
+      this.links = [];
+      if (this.local) this.openLocal();
+      else this.links = urls.map((u) => new Link(u, this));
       window.addEventListener("online", () => this.reconnect());
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) this.reconnect();
       });
     }
-    get online() { return this.links.filter((l) => l.up).length; }
-    get total() { return this.links.length; }
-    sub(topic) { if (this.subs.has(topic)) return; this.subs.add(topic); this.links.forEach((l) => l.subscribe([topic])); }
+    openLocal() {
+      if (this.localTimer || (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING))) return;
+      let ws;
+      try { ws = new WebSocket(CFG.localWsUrl); }
+      catch (_) { this.scheduleLocal(); return; }
+      this.ws = ws;
+      ws.onopen = () => {
+        if (this.ws !== ws) return;
+        this.localUp = true; this._status();
+        if (this.subs.size) this.localSend({ type: "sub", topics: [...this.subs] });
+      };
+      ws.onmessage = (ev) => {
+        if (this.ws !== ws) return;
+        let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+        if (m.type === "message" && typeof m.topic === "string") this._msg(m.topic, m.obj, !!m.retained);
+      };
+      ws.onclose = () => {
+        if (this.ws !== ws) return;
+        this.localUp = false; this._status(); this.scheduleLocal();
+      };
+      ws.onerror = () => { try { ws.close(); } catch (_) {} };
+    }
+    scheduleLocal() {
+      if (this.localTimer) return;
+      this.localTimer = setTimeout(() => { this.localTimer = null; this.openLocal(); }, 1200 + Math.round(Math.random() * 800));
+    }
+    localSend(message) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+      try { this.ws.send(JSON.stringify(message)); return true; } catch (_) { return false; }
+    }
+    get online() { return this.local ? (this.localUp ? 1 : 0) : this.links.filter((l) => l.up).length; }
+    get total() { return this.local ? 1 : this.links.length; }
+    sub(topic) {
+      if (this.subs.has(topic)) return;
+      this.subs.add(topic);
+      if (this.local) { if (this.localUp) this.localSend({ type: "sub", topics: [topic] }); }
+      else this.links.forEach((l) => l.subscribe([topic]));
+    }
     pub(topic, obj, retain = false) {
+      if (this.local) return this.localSend({ type: "publish", topic, obj, retain }) ? 1 : 0;
       const payload = enc.encode(JSON.stringify(obj));
       let ok = 0; this.links.forEach((l) => { if (l.publish(topic, payload, retain)) ok++; });
       return ok;
     }
-    reconnect(force = false) { this.links.forEach((l) => l.wake(force)); }
+    reconnect() {
+      if (this.local) { if (!this.localUp) this.openLocal(); }
+      else this.links.forEach((l) => l.wake());
+    }
     on(fn) { this.handlers.push(fn); }
     onStatus(fn) { this.statusFns.push(fn); fn(this.online, this.total); }
     _status() { this.statusFns.forEach((f) => f(this.online, this.total)); }
