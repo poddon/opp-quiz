@@ -61,6 +61,21 @@
     const LS = "opp.host2." + CFG.room;
     const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, done: {}, g: { phase: "lobby", block: null, qi: 0, qStart: 0, limit: 25, prev: {}, prevOrder: [] } });
     let S = U.store.get(LS, null) || fresh();
+    // Сохраняем очки, завершённые темы и текущий экран после перенумерации слайдов.
+    if (!S.slideNumbers51) {
+      const slideMap = { 9: 5, 13: 14, 15: 16, 19: 21, 22: 24, 24: 25, 27: 28, 34: 41, 44: 45, 46: 47, 49: 50 };
+      const mapSlide = (id) => Object.hasOwn(slideMap, id) ? slideMap[id] : id;
+      if (S.g && S.g.block != null) S.g.block = mapSlide(S.g.block);
+      S.done = Object.fromEntries(Object.entries(S.done || {}).map(([id, val]) => [mapSlide(id), val]));
+      for (const p of Object.values(S.players || {})) {
+        p.ans = Object.fromEntries(Object.entries(p.ans || {}).map(([qid, val]) => {
+          const parts = qid.split(".");
+          return [parts.length === 2 ? mapSlide(parts[0]) + "." + parts[1] : qid, val];
+        }));
+      }
+      S.slideNumbers51 = true;
+      U.store.set(LS, S);
+    }
     let saveT = 0; const save = () => { clearTimeout(saveT); saveT = setTimeout(() => U.store.set(LS, S), 200); };
     const usedN = new Map();
     SFX.muted = U.store.get("opp.muted", false);
