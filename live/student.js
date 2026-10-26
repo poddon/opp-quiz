@@ -25,9 +25,9 @@
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
-    $("#nettxt").textContent = !on ? "переподключение…" : hostAlive() ? "на связи" : "ожидаем экран";
+    $("#nettxt").textContent = !on ? "нет связи — повторяем" : !hostAlive() ? "ожидаем экран" : !me ? "регистрируем…" : "на связи";
   }
-  net.onStatus((on) => { netStatus(); if (on && prof.name) hello(); });
+  net.onStatus((on) => { netStatus(); if (on && prof.name) { lastHello = 0; hello(); } });
   setInterval(netStatus, 3000);
 
   net.on((topic, msg) => {
@@ -41,6 +41,7 @@
       if (st && msg.sid !== st.sid) return;
       const prevScore = me ? me.score : null;
       me = msg;
+      netStatus();
       for (const q in pending) if (me.ans && me.ans[q]) delete pending[q];
       if (prevScore !== null && prevScore !== me.score) bump();
       checkEvents(); render();
@@ -48,8 +49,17 @@
   });
 
   function send(o) { o.mid = U.mid(); o.pid = prof.pid; o.name = prof.name; return net.pub(T_UP, o); }
-  function hello() { send({ ty: "join" }); }
-  setInterval(() => { if (prof.name && net.online) hello(); }, 40000);
+  let lastHello = 0;
+  function hello() {
+    if (!prof.name || !net.online || Date.now() - lastHello < 2000) return;
+    lastHello = Date.now();
+    send({ ty: "join" });
+  }
+  // Если 50 телефонов подключаются одновременно, повторяем регистрацию
+  // до получения подтверждения от экрана; не ждём 40 секунд.
+  setInterval(() => {
+    if (prof.name && net.online && (!me || Date.now() - lastHello > 30000)) hello();
+  }, 3500);
   // повтор ответа, если экран преподавателя не подтвердил
   setInterval(() => {
     for (const q in pending) if (Date.now() - pending[q].t > 2500) { pending[q].t = Date.now(); send({ ty: "ans", q, a: pending[q].a }); }
@@ -75,6 +85,10 @@
     }
     if (!joined) return renderJoin();
     if (!st) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><div class="card sticker tilt-l"><h1>Ожидание подключения</h1><p>Вопрос появится автоматически, когда преподаватель начнёт игру.</p></div></div>`); }
+    if (!me) {
+      $("#topL").textContent = CFG.roomName;
+      return setView("registering", `<div class="center"><div class="spin"></div><div class="card sticker"><h1>Подключаем к классу</h1><p>Проверяем регистрацию у преподавателя. Не закрывайте страницу.</p></div></div>`);
+    }
     // Во время кратких обрывов не заменяем вопрос или результат экраном ожидания.
     // Состояние связи показывается только в небольшой плашке наверху.
     const b = st.block ? byId[st.block] : null;
