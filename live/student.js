@@ -3,12 +3,14 @@
   const { CFG, Net, U, SFX, confetti } = window.OPP;
   const { $, esc } = U;
   const byId = Object.fromEntries(window.BLOCKS.map((b) => [String(b.id), b]));
+  $("#roomName").textContent = CFG.roomName;
 
   // ---- профиль на этом телефоне ----
-  let prof = U.store.get("opp.me2", null);
+  const profileKey = CFG.roomId === "class1" ? "opp.me2" : "opp.me2.class2";
+  let prof = U.store.get(profileKey, null);
   if (!prof || !prof.pid) prof = { pid: "p" + U.mid(), name: "", seenEv: [] };
   prof.seenEv = prof.seenEv || [];
-  const saveProf = () => U.store.set("opp.me2", prof);
+  const saveProf = () => U.store.set(profileKey, prof);
   saveProf();
 
   let st = null, stAt = 0, me = null, deadline = 0, view = "", resultShown = {};
@@ -106,10 +108,17 @@
     if (!setView("join", `<div class="center">
       <div class="logo hero-logo slam">Битва<span>коммерсантов</span></div>
       <form class="join sticker tilt-l rise" id="jf" autocomplete="on">
+        <div class="field"><label for="chooseRoom">Учебный класс</label>
+          <select id="chooseRoom" aria-label="Выберите учебный класс">
+            <option value="class1" ${CFG.roomId === "class1" ? "selected" : ""}>Учебный класс 1</option>
+            <option value="class2" ${CFG.roomId === "class2" ? "selected" : ""}>Учебный класс 2</option>
+          </select>
+        </div>
         <div class="field"><label for="fam">Фамилия</label><input id="fam" autocomplete="family-name" required maxlength="30"></div>
         <div class="field"><label for="nam">Имя</label><input id="nam" autocomplete="given-name" required maxlength="30"></div>
         <button class="btn btn--blue" type="submit">Я в деле!</button>
       </form></div>`)) return;
+    $("#chooseRoom").addEventListener("change", (e) => { location.href = CFG.studentUrl(e.target.value); });
     if (prof.last) { const [f, ...n] = prof.last.split(" "); $("#fam").value = f || ""; $("#nam").value = n.join(" "); }
     $("#jf").addEventListener("submit", (e) => {
       e.preventDefault(); SFX.unlock();
