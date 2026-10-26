@@ -12,9 +12,11 @@
   html, body { height: 100%; }
   body { overflow-x: hidden; }
   .app { position: relative; z-index: 1; min-height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
-  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     padding: max(10px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
   .top b { font-family: var(--f-d); font-weight: 800; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; background: var(--navy); padding: .45em .8em; border-radius: 8px; transform: rotate(-2deg); }
+  .room-name { display:inline-flex; align-items:center; border:2px solid var(--white); border-radius:8px; font-size:.72rem; padding:.35em .65em; font-weight:800; white-space:nowrap; }
+  .field select { width: 100%; min-height: 48px; padding: .75em; font-size: 1rem; color: var(--navy); background: var(--ice); border: 4px solid var(--navy); border-radius: 12px; font-weight: 800; }
   .main { display: flex; flex-direction: column; min-height: 0; padding: 8px max(14px, env(safe-area-inset-right, 0px)) 16px max(14px, env(safe-area-inset-left, 0px)); }
   .bottom { display: flex; align-items: center; gap: 10px; background: var(--navy);
     padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
@@ -60,7 +62,7 @@
 <body>
 <div class="bg" aria-hidden="true"></div>
 <div class="app">
-  <div class="top"><b id="topL">Битва коммерсантов</b><span class="pill"><span class="dot" id="netdot"></span><span id="nettxt">подключаемся…</span></span></div>
+  <div class="top"><b id="topL">Битва коммерсантов</b><span id="roomName" class="room-name">Учебный класс 1</span><span class="pill"><span class="dot" id="netdot"></span><span id="nettxt">подключаемся…</span></span></div>
   <main class="main" id="main"></main>
   <div class="bottom" id="bottom" hidden><span id="meAv"></span><span class="nm" id="meName"></span><span class="sc" id="meScore">0</span></div>
 </div>
@@ -69,7 +71,7 @@
 
 <script src="vendor/qrcode.js"></script>
 <script src="questions.js?v=6"></script>
-<script src="common.js?v=5"></script>
-<script src="student.js?v=7"></script>
+<script src="common.js?v=7"></script>
+<script src="student.js?v=8"></script>
 </body>
 </html>
