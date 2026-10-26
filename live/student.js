@@ -55,11 +55,13 @@
     lastHello = Date.now();
     send({ ty: "join" });
   }
-  // Если 50 телефонов подключаются одновременно, повторяем регистрацию
-  // до получения подтверждения от экрана; не ждём 40 секунд.
-  setInterval(() => {
+  // Разводим повторные попытки по времени, чтобы десятки телефонов
+  // не атаковали MQTT-сервер в одну и ту же миллисекунду.
+  function retryJoin() {
     if (prof.name && net.online && (!me || Date.now() - lastHello > 30000)) hello();
-  }, 3500);
+    setTimeout(retryJoin, 2500 + Math.round(Math.random() * 2200));
+  }
+  setTimeout(retryJoin, 1200 + Math.round(Math.random() * 1500));
   // повтор ответа, если экран преподавателя не подтвердил
   setInterval(() => {
     for (const q in pending) if (Date.now() - pending[q].t > 2500) { pending[q].t = Date.now(); send({ ty: "ans", q, a: pending[q].a }); }
