@@ -36,13 +36,14 @@
     studentUrl: (id = roomId) => roomUrl("", id),
     screenUrl: (id = roomId, pult = false) => roomUrl("screen.html", id, pult),
     loginHash: "839471ac87f97a9ae4668ec270ef0a42f2f85c1befca094e6ae2998bc84ca324",
-    // Один общий сервер для всех учеников и ведущего. Несвязанные публичные
-    // брокеры не обмениваются сообщениями между собой.
-    brokers: [{
+    // Публичные брокеры не обмениваются сообщениями между собой, поэтому экран
+    // ведущего слушает ВСЕ сразу, а телефон держит одно соединение: сначала с
+    // сервером из QR-кода, при сбое — автоматически переходит на следующий.
+    brokers: [netId, ...Object.keys(brokerNames).filter((k) => k !== netId)].map((k) => ({
       emqx: "wss://broker.emqx.io:8084/mqtt",
       hivemq: "wss://broker.hivemq.com:8884/mqtt",
       mosquitto: "wss://test.mosquitto.org:8081/mqtt"
-    }[netId]],
+    }[k])),
     maxPts: 1000,                 // за верный ответ: от 500 (в последнюю секунду) до 1000 (мгновенно)
     streakBonus: 100,             // +100 за каждый верный подряд, максимум +500
     limit: (q) => (q.p === 15 ? 45 : 25)   // секунд на вопрос: расчётные — дольше
@@ -61,10 +62,19 @@
       this.url = url; this.owner = owner; this.ws = null; this.up = false;
       this.buf = new Uint8Array(0); this.pid = 1;
       this.retry = 900; this.timer = null; this.cto = null; this.ping = null;
-      this.lastRx = 0;
+      this.lastRx = 0; this.stopped = false;
       this.open();
     }
+    stop() {
+      this.stopped = true;
+      clearTimeout(this.timer); this.timer = null;
+      clearTimeout(this.cto); clearInterval(this.ping);
+      const ws = this.ws; this.ws = null;
+      if (ws) try { ws.close(); } catch (_) {}
+      this.setUp(false);
+    }
     open() {
+      if (this.stopped) return;
       clearTimeout(this.timer); this.timer = null;
       clearTimeout(this.cto); clearInterval(this.ping);
       let ws;
@@ -94,15 +104,16 @@
       ws.onerror = () => { try { ws.close(); } catch (_) {} };
       this.cto = setTimeout(() => {
         if (this.ws === ws && !this.up) try { ws.close(); } catch (_) {}
-      }, 7000);
+      }, 6000);
     }
     later() {
-      if (this.timer) return;
+      if (this.timer || this.stopped) return;
       const delay = this.retry + Math.round(Math.random() * 400);
       this.timer = setTimeout(() => { this.timer = null; this.open(); }, delay);
       this.retry = Math.min(Math.round(this.retry * 1.6), 12000);
     }
     wake(force = false) {
+      if (this.stopped) return;
       if (!force && this.up && this.ws && this.ws.readyState === 1) return;
       const old = this.ws;
       clearTimeout(this.timer); this.timer = null;
@@ -112,7 +123,7 @@
       this.open();
       if (old) try { old.close(); } catch (_) {}
     }
-    setUp(v) { if (this.up !== v) { this.up = v; this.owner._status(); } }
+    setUp(v) { if (this.up !== v) { this.up = v; this.owner._linkState(this, v); this.owner._status(); } }
     feed(chunk) {
       if (this.buf.length + chunk.length > 1048576) {
         try { this.ws.close(); } catch (_) {}
@@ -181,17 +192,53 @@
     }
   }
 
+  // mode "all": одно соединение с каждым сервером (экран ведущего).
+  // mode "failover": одно соединение, при сбое переход на следующий сервер (телефоны).
   class Net {
-    constructor(urls) {
+    constructor(urls, mode = "failover") {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
-      this.local = CFG.localMode; this.ws = null; this.localUp = false; this.localTimer = null;
-      this.links = [];
-      if (this.local) this.openLocal();
-      else this.links = urls.map((u) => new Link(u, this));
+      this.local = CFG.localMode; this.ws = null; this.localUp = false; this.localTimer = null; this.localRx = 0;
+      this.links = []; this.urls = urls; this.mode = mode;
+      if (this.local) {
+        this.openLocal();
+        // Wi-Fi может «молча» оборвать соединение: сервер шлёт ping каждые 15 с.
+        setInterval(() => {
+          if (this.localUp && Date.now() - this.localRx > 40000) try { this.ws.close(); } catch (_) {}
+        }, 5000);
+      } else if (mode === "all" || urls.length < 2) this.links = urls.map((u) => new Link(u, this));
+      else this.startFailover();
       window.addEventListener("online", () => this.reconnect());
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) this.reconnect();
       });
+    }
+    startFailover() {
+      // Помним сервер, который сработал на этом телефоне, — после перезагрузки
+      // страницы подключаемся сразу к нему, без ожидания.
+      const memo = U.store.get("opp.net.ok", null);
+      this.ai = memo && memo.net === CFG.netId && Date.now() - memo.t < 4 * 3600e3 && this.urls[memo.i] ? memo.i : 0;
+      this.everUp = false; this.downSince = Date.now();
+      this.links = [new Link(this.urls[this.ai], this)];
+      setInterval(() => {
+        const l = this.links[0];
+        if (!l || l.up) return;
+        // Новый сервер: ждём 8 с. Работавший и отвалившийся: даём 12 с на переподключение.
+        if (Date.now() - this.downSince > (this.everUp ? 12000 : 8000)) this.switchBroker();
+      }, 1000);
+    }
+    switchBroker() {
+      this.links[0].stop();
+      this.ai = (this.ai + 1) % this.urls.length;
+      this.everUp = false; this.downSince = Date.now();
+      this.links = [new Link(this.urls[this.ai], this)];
+      this._status();
+    }
+    _linkState(link, up) {
+      if (this.mode !== "failover" || link !== this.links[0]) return;
+      if (up) {
+        this.everUp = true;
+        U.store.set("opp.net.ok", { net: CFG.netId, i: this.ai, t: Date.now() });
+      } else this.downSince = Date.now();
     }
     openLocal() {
       if (this.localTimer || (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING))) return;
@@ -201,11 +248,12 @@
       this.ws = ws;
       ws.onopen = () => {
         if (this.ws !== ws) return;
-        this.localUp = true; this._status();
+        this.localUp = true; this.localRx = Date.now(); this._status();
         if (this.subs.size) this.localSend({ type: "sub", topics: [...this.subs] });
       };
       ws.onmessage = (ev) => {
         if (this.ws !== ws) return;
+        this.localRx = Date.now();
         let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
         if (m.type === "message" && typeof m.topic === "string") this._msg(m.topic, m.obj, !!m.retained);
       };

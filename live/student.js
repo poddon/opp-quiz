@@ -25,7 +25,7 @@
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
-    $("#nettxt").textContent = !on ? "нет связи — повторяем" : !hostAlive() ? "ожидаем экран" : !me ? "регистрируем…" : "на связи";
+    $("#nettxt").textContent = !on ? "нет связи — ищем сервер" : !hostAlive() ? "ожидаем экран" : !me ? "регистрируем…" : "на связи";
   }
   net.onStatus((on) => { netStatus(); if (on && prof.name) { lastHello = 0; hello(); } });
   setInterval(netStatus, 3000);
@@ -51,15 +51,16 @@
   function send(o) { o.mid = U.mid(); o.pid = prof.pid; o.name = prof.name; return net.pub(T_UP, o); }
   let lastHello = 0;
   function hello() {
-    if (!prof.name || !net.online || Date.now() - lastHello < 2000) return;
+    if (!prof.name || !net.online || Date.now() - lastHello < 1500) return;
     lastHello = Date.now();
     send({ ty: "join" });
   }
   // Разводим повторные попытки по времени, чтобы десятки телефонов
   // не атаковали MQTT-сервер в одну и ту же миллисекунду.
+  // Пока экран не подтвердил регистрацию — повторяем чаще (1,5–3 с), потом раз в 30 с.
   function retryJoin() {
     if (prof.name && net.online && (!me || Date.now() - lastHello > 30000)) hello();
-    setTimeout(retryJoin, 2500 + Math.round(Math.random() * 2200));
+    setTimeout(retryJoin, me ? 2500 + Math.round(Math.random() * 2200) : 1500 + Math.round(Math.random() * 1500));
   }
   setTimeout(retryJoin, 1200 + Math.round(Math.random() * 1500));
   // повтор ответа, если экран преподавателя не подтвердил

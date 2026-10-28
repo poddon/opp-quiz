@@ -162,11 +162,18 @@ server.on("upgrade", (req, socket, head) => {
   );
   const client = { socket, subs: new Set(), buffer: Buffer.alloc(0) };
   clients.add(client);
+  socket.setNoDelay(true);
+  socket.setKeepAlive(true, 20000);
   socket.on("data", (chunk) => parseFrames(client, chunk));
   socket.on("error", () => closeClient(socket));
   socket.on("close", () => { clients.delete(client); });
   if (head && head.length) parseFrames(client, head);
 });
+
+// Сердцебиение: телефоны узнают о «тихом» обрыве Wi-Fi и переподключаются.
+setInterval(() => {
+  for (const c of clients) send(c.socket, { type: "ping" });
+}, 15000);
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("\nВикторина запущена в локальной сети. Порт: " + PORT);

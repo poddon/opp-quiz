@@ -4,7 +4,7 @@
   const { $, $$, esc } = U;
   const BLOCKS = window.BLOCKS, VIOL = window.VIOLATIONS;
   const byId = Object.fromEntries(BLOCKS.map((b) => [String(b.id), b]));
-  const T_ST = CFG.topic("st"), T_UP = CFG.topic("up"), T_ADM = CFG.topic("adm");
+  const T_ST = CFG.topic("st"), T_UP = CFG.topic("up"), T_ADM = CFG.topic("adm"), T_BD = CFG.topic("bd");
   const T_PL = (pid) => CFG.topic("pl/" + pid);
   const isPult = new URLSearchParams(location.search).has("pult");
   const fmtD = (d) => (d < 0 ? "−" + Math.abs(d) : "+" + d);
@@ -47,7 +47,8 @@
   async function start() {
     hkey = await U.hmacKey("opp-public-host-v1");
     $("#v-login").hidden = true;
-    net = new Net(CFG.brokers);
+    // Большой экран слушает все серверы сразу, пульт — один с автопереключением.
+    net = new Net(CFG.brokers, isPult ? "failover" : "all");
     isPult ? startPult() : startHost();
   }
 
@@ -109,7 +110,7 @@
     $("#bSound").textContent = SFX.muted ? "🔇" : "🔊";
     $("#v-host").hidden = false;
 
-    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = on ? `${CFG.netName} · подключено` : `${CFG.netName} · нет связи`; if (on) broadcast(true); });
+    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = !on ? "нет связи" : CFG.localMode ? "Локальная сеть · подключено" : `серверов на связи: ${on} из ${tot}`; if (on) broadcast(true); });
     net.sub(T_UP); net.sub(T_ADM); net.sub(T_ST);
     net.on((topic, m) => {
       if (topic === T_UP) onUp(m);
@@ -291,20 +292,32 @@
       const pl = { ts: Date.now(), sid: S.sid, key: p.key, name: p.name, score: p.score, streak: p.streak || 0, ans, ev: p.ev.slice(-8) };
       p.pids.forEach((pid) => net.pub(T_PL(pid), pl, true));
     }
-    let bT = 0, lastB = 0;
+    // Состояние игры уходит на каждый телефон, поэтому держим его маленьким:
+    // полный рейтинг нужен студентам только на экранах результата.
+    // Пульт получает список игроков отдельным сообщением (T_BD).
+    let bT = 0, lastB = 0, bdT = 0, lastBd = 0;
+    const RANK_PHASES = { reveal: 1, board: 1, podium: 1 };
+    function boardList() { return ranked().map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._r })); }
     function broadcast(now) {
       clearTimeout(bT);
       const go = () => {
         lastB = Date.now();
         const g = G(), arr = ranked();
-        net.pub(T_ST, {
+        const msg = {
           mid: U.mid(), ts: Date.now(), host: HOST_ID, sid: S.sid,
-          phase: g.phase, block: g.block, qi: g.qi,
-          answered: g.phase === "question" ? answeredCount() : null, next: nextLabel(),
-          board: arr.map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._r }))
-        }, true);
+          phase: g.phase, block: g.block, qi: g.qi, n: arr.length,
+          answered: g.phase === "question" ? answeredCount() : null, next: nextLabel()
+        };
+        if (RANK_PHASES[g.phase]) msg.board = boardList();
+        net.pub(T_ST, msg, true);
+        pubBoard(now);
       };
-      if (now) go(); else bT = setTimeout(go, Math.max(0, 500 - (Date.now() - lastB)));
+      if (now) go(); else bT = setTimeout(go, Math.max(0, 1000 - (Date.now() - lastB)));
+    }
+    function pubBoard(now) {
+      clearTimeout(bdT);
+      const go = () => { lastBd = Date.now(); net.pub(T_BD, { ts: Date.now(), sid: S.sid, board: boardList() }, true); };
+      if (now) go(); else bdT = setTimeout(go, Math.max(0, 1500 - (Date.now() - lastBd)));
     }
     setInterval(() => broadcast(true), 10000);
 
@@ -519,12 +532,16 @@
     bindRoomSelect("#pultRoom", true);
     $("#v-pult").hidden = false;
     document.body.style.overflow = "auto";
-    let st = null;
-    net.sub(T_ST);
+    let st = null, bd = null;
+    net.sub(T_ST); net.sub(T_BD);
     let stAt = 0; const alive = () => st && Date.now() - stAt < 35000;
     const upd = () => { const on = net.online; $("#pNetDot").classList.toggle("on", on > 0 && alive()); $("#pNet").textContent = !on ? "нет связи" : alive() ? "экран на связи" : "экран не отвечает"; };
     net.onStatus(upd); setInterval(upd, 3000);
-    net.on((t, m) => { if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; stAt = Date.now(); upd(); render(); } });
+    net.on((t, m) => {
+      if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; stAt = Date.now(); upd(); render(); }
+      else if (t === T_BD) { if (bd && m.ts < bd.ts) return; bd = m; renderList(); }
+    });
+    const board = () => (bd && bd.board) || (st && st.board) || [];
     $("#pSearch").oninput = renderList; $("#pOut").onclick = logout;
 
     async function cmd(c, okText) {
@@ -544,7 +561,7 @@
         lastKey = key;
         $("#pNow").innerHTML = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>
           ${q ? `<div class="qt">${esc(q.t)}</div><div class="ans">✔ Ответ: ${U.L[q.c]}. ${esc(q.o[q.c])}</div>` : b ? `<div class="qt">${b.emoji} ${esc(b.title)}</div>` : ""}
-          ${st.phase === "question" ? `<div style="font-weight:800">Ответили: ${st.answered} из ${st.board.length}</div>` : ""}
+          ${st.phase === "question" ? `<div style="font-weight:800">Ответили: ${st.answered} из ${st.n ?? board().length}</div>` : ""}
           <button class="btn btn--blue big" type="button" id="pNext">${esc(st.next || "Далее ▶")}</button>
           ${st.phase !== "lobby" ? `<button class="btn btn--sm" type="button" id="pLobby">🏠 К выбору практики</button>` : ""}`;
         $("#pNext").onclick = () => cmd({ op: "next", phase: st.phase }, "Готово");
@@ -557,10 +574,10 @@
     function renderList() {
       if (!st) return;
       const q = U.normName($("#pSearch").value);
-      const arr = (st.board || []).filter((p) => !q || p.k.includes(q));
+      const all = board(), arr = all.filter((p) => !q || p.k.includes(q));
       $("#plist").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.k)}"><span class="r">${p.r}</span>${U.av(p.k, p.n)}<span class="nm">${esc(p.n)}</span><span class="s">${p.s}</span></button>`).join("")
-        : `<div class="empty">${st.board && st.board.length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
-      $$("#plist .plb").forEach((el) => el.onclick = () => { const p = st.board.find((x) => x.k === el.dataset.k); openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`)); });
+        : `<div class="empty">${all.length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
+      $$("#plist .plb").forEach((el) => el.onclick = () => { const p = all.find((x) => x.k === el.dataset.k); openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`)); });
     }
     render();
   }
