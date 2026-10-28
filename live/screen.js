@@ -86,6 +86,7 @@
     bindRoomSelect("#hostRoom", false);
     bindNetworkSelect();
     const HOST_ID = "h" + U.mid(), started = Date.now();
+    let ovKind = null;
     const LS = "opp.host2." + CFG.room;
     const fresh = () => ({ sid: "s" + U.mid(), players: {}, pidKey: {}, done: {}, g: { phase: "lobby", block: null, qi: 0, qStart: 0, limit: 25, prev: {}, prevOrder: [] } });
     let S = U.store.get(LS, null) || fresh();
@@ -252,6 +253,22 @@
       if (g.phase === "board") return g.qi + 1 < curBlock().q.length ? startQuestion(g.qi + 1) : toPodium();
       if (g.phase === "podium") { S.done[g.block] = true; return toLobby(); }
     }
+    // Шаг назад — только там, где это безопасно для очков.
+    function backLabel() {
+      const ph = G().phase;
+      return ph === "board" ? "К ответу" : ph === "podium" ? "К рейтингу" : ph === "intro" ? "К выбору практики" : null;
+    }
+    function back() {
+      const ph = G().phase;
+      if (ph === "board") setPhase("reveal");
+      else if (ph === "podium") setPhase("board");
+      else if (ph === "intro") toLobby();
+    }
+    function setMuted(m) {
+      SFX.unlock(); SFX.muted = !!m; U.store.set("opp.muted", SFX.muted);
+      if (window.MUSIC) window.MUSIC.setMuted(SFX.muted);
+      $("#bSound").textContent = SFX.muted ? "🔇" : "🔊"; music(); broadcast(true);
+    }
     function setPhase(ph) { G().phase = ph; save(); broadcast(true); render(true); music(); phaseSay(); }
     function toLobby() {  G().block = null; setPhase("lobby"); }
     function openBlock(id) { if (!byId[id]) return;  Object.assign(G(), { block: +id, qi: 0 }); setPhase("intro"); }
@@ -306,7 +323,9 @@
         const msg = {
           mid: U.mid(), ts: Date.now(), host: HOST_ID, sid: S.sid,
           phase: g.phase, block: g.block, qi: g.qi, n: arr.length,
-          answered: g.phase === "question" ? answeredCount() : null, next: nextLabel()
+          answered: g.phase === "question" ? answeredCount() : null, next: nextLabel(),
+          back: backLabel(), ov: ovKind, muted: SFX.muted,
+          el: g.phase === "question" ? Math.round((Date.now() - g.qStart) / 1000) : null
         };
         if (RANK_PHASES[g.phase]) msg.board = boardList();
         net.pub(T_ST, msg, true);
@@ -316,7 +335,12 @@
     }
     function pubBoard(now) {
       clearTimeout(bdT);
-      const go = () => { lastBd = Date.now(); net.pub(T_BD, { ts: Date.now(), sid: S.sid, board: boardList() }, true); };
+      const go = () => {
+        lastBd = Date.now();
+        const qid = G().phase === "question" ? curQid() : null;
+        // ak — кто уже ответил на текущий вопрос (пульт показывает «не ответили»)
+        net.pub(T_BD, { ts: Date.now(), sid: S.sid, board: boardList(), ak: qid ? Object.values(S.players).filter((p) => p.ans[qid]).map((p) => p.key) : null }, true);
+      };
       if (now) go(); else bdT = setTimeout(go, Math.max(0, 1500 - (Date.now() - lastBd)));
     }
     setInterval(() => broadcast(true), 10000);
@@ -331,6 +355,9 @@
       else if (c.op === "next" && c.phase === G().phase) next();
       else if (c.op === "open") openBlock(c.id);
       else if (c.op === "lobby") toLobby();
+      else if (c.op === "back" && c.phase === G().phase) back();
+      else if (c.op === "ov") { if (c.kind === "rating" || c.kind === "join") openOverlay(c.kind); else closeOverlay(); }
+      else if (c.op === "mute") setMuted(!!c.on);
     }
 
     // ---------- отрисовка ----------
@@ -455,11 +482,14 @@
     function banner(t) { if ($(".banner")) return; const b = document.createElement("div"); b.className = "banner"; b.textContent = t; document.body.appendChild(b); setTimeout(() => b.remove(), 12000); }
 
     // ---------- оверлеи: рейтинг, штрафы, пульт ----------
-    let ovKind = null;
     function openOverlay(kind) {
       ovKind = kind;
       const ov = $("#ov"); ov.hidden = false;
-      if (kind === "pult") {
+      if (kind === "join") {
+        ov.innerHTML = `<div class="ovhead"><h2>📷 Заходите в игру</h2><button class="btn" type="button" data-close>Закрыть</button></div>
+          <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(70vh,80vw)">${joinQR()}</div>
+          <p style="font-weight:800;font-size:1.4em;margin:0">${esc(CFG.roomName)} · наведите камеру телефона</p></div>`;
+      } else if (kind === "pult") {
         const url = CFG.screenUrl(CFG.roomId, true);
         ov.innerHTML = `<div class="ovhead"><h2>📱 Пульт на телефоне</h2><button class="btn" type="button" data-close>Закрыть</button></div>
           <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(80vw,22em)">${U.qrSvg(url)}</div>
@@ -479,15 +509,16 @@
         if (!rating) setTimeout(() => $("#ovQ").focus(), 50);
       }
       ov.querySelector("[data-close]").onclick = closeOverlay;
+      broadcast(true);
     }
-    function closeOverlay() { $("#ov").hidden = true; ovKind = null; if (document.activeElement) document.activeElement.blur(); }
+    function closeOverlay() { const was = ovKind; $("#ov").hidden = true; ovKind = null; if (document.activeElement) document.activeElement.blur(); if (was) broadcast(true); }
 
     // ---------- кнопки и клавиши ----------
     $("#next").onclick = () => { SFX.unlock(); next(); };
     $("#bRating").onclick = () => openOverlay("rating");
     $("#bPen").onclick = () => openOverlay("pen");
     $("#bPult").onclick = () => openOverlay("pult");
-    $("#bSound").onclick = () => { SFX.unlock(); SFX.muted = !SFX.muted; U.store.set("opp.muted", SFX.muted); if (window.MUSIC) window.MUSIC.setMuted(SFX.muted); $("#bSound").textContent = SFX.muted ? "🔇" : "🔊"; music(); };
+    $("#bSound").onclick = () => setMuted(!SFX.muted);
     $("#bMenu").onclick = (e) => { e.stopPropagation(); $("#menu").hidden = !$("#menu").hidden; };
     document.addEventListener("click", () => { $("#menu").hidden = true; });
     $("#mLobby").onclick = toLobby;
@@ -519,6 +550,7 @@
       if (!$("#modal").hidden || !$("#ov").hidden) return;
       if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); SFX.unlock(); next(); }
       if (e.key === "r" || e.key === "к") openOverlay("rating");
+      if (e.key === "Backspace" || e.key === "ArrowLeft") { e.preventDefault(); back(); }
     });
     window.addEventListener("resize", () => render(true));
 
@@ -532,53 +564,140 @@
     bindRoomSelect("#pultRoom", true);
     $("#v-pult").hidden = false;
     document.body.style.overflow = "auto";
-    let st = null, bd = null;
+    $("#pRoomName").textContent = CFG.roomName;
+    let st = null, bd = null, stAt = 0, busy = 0, busyKey = "";
     net.sub(T_ST); net.sub(T_BD);
-    let stAt = 0; const alive = () => st && Date.now() - stAt < 35000;
+    const alive = () => st && Date.now() - stAt < 35000;
     const upd = () => { const on = net.online; $("#pNetDot").classList.toggle("on", on > 0 && alive()); $("#pNet").textContent = !on ? "нет связи" : alive() ? "экран на связи" : "экран не отвечает"; };
     net.onStatus(upd); setInterval(upd, 3000);
+    const board = () => (bd && bd.board) || (st && st.board) || [];
     net.on((t, m) => {
       if (t === T_ST) { if (st && m.ts < st.ts) return; st = m; stAt = Date.now(); upd(); render(); }
-      else if (t === T_BD) { if (bd && m.ts < bd.ts) return; bd = m; renderList(); }
+      else if (t === T_BD) { if (bd && m.ts < bd.ts) return; bd = m; renderList(); renderNow(); }
     });
-    const board = () => (bd && bd.board) || (st && st.board) || [];
-    $("#pSearch").oninput = renderList; $("#pOut").onclick = logout;
+
+    // Экран телефона не гаснет, пока открыт пульт.
+    let lock = null;
+    const keepAwake = async () => { try { if (!lock && navigator.wakeLock && !document.hidden) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); } } catch (_) {} };
+    document.addEventListener("pointerdown", keepAwake);
+    document.addEventListener("visibilitychange", keepAwake);
+
+    // ---- вкладки ----
+    const TABS = ["game", "people", "screen"];
+    let tab = null;
+    function setTab(t) {
+      tab = t;
+      TABS.forEach((k) => { $("#pt-" + k).hidden = k !== t; $(`[data-tab="${k}"]`).classList.toggle("on", k === t); });
+    }
+    $$(".ptabs [data-tab]").forEach((b) => b.onclick = () => setTab(b.dataset.tab));
 
     async function cmd(c, okText) {
       const ts = Date.now(), n = U.mid();
       const sig = await U.sign(hkey, ts + "|" + n + "|" + JSON.stringify(c));
       const sent = net.pub(T_ADM, { mid: U.mid(), ts, n, cmd: c, sig });
       if (navigator.vibrate) try { navigator.vibrate(30); } catch (_) {}
-      toast(!sent ? "Нет связи — команда не ушла" : alive() ? okText : okText + " (экран пока не отвечает)");
+      if (!sent) toast("Нет связи — команда не ушла");
+      else if (okText) toast(alive() ? okText : okText + " (экран пока не отвечает)");
+      return sent;
     }
+    // Шаг вперёд/назад: кнопка блокируется до ответа экрана — двойное нажатие не пропустит вопрос.
+    async function step(op) {
+      if (!st || busy) return;
+      busyKey = [st.phase, st.block, st.qi].join("|");
+      busy = setTimeout(() => { busy = 0; renderDock(); }, 3000);
+      renderDock();
+      if (!(await cmd({ op, phase: st.phase }))) { clearTimeout(busy); busy = 0; renderDock(); }
+    }
+    $("#pNext").onclick = () => step("next");
+    $("#pBack").onclick = () => step("back");
+
     const PH = { lobby: "Выбор практики", intro: "Заставка практики", question: "Идёт вопрос", reveal: "Правильный ответ", board: "Рейтинг", podium: "Итоги практики" };
+
+    function renderDock() {
+      const nb = $("#pNext"), bb = $("#pBack");
+      nb.disabled = !st || !!busy;
+      nb.innerHTML = !st ? "Ждём экран…" : busy ? "⏳ Отправлено…" : esc(st.next || "Далее ▶");
+      bb.hidden = !st || !st.back;
+      bb.disabled = !!busy;
+      if (st && st.back) bb.textContent = "◀ " + st.back;
+    }
+    let tick = 0;
+    function renderNow() {
+      const box = $("#pNow");
+      if (!st) { box.innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
+      const b = st.block ? byId[st.block] : null, q = b && st.phase !== "intro" && st.phase !== "podium" && st.phase !== "lobby" ? b.q[st.qi] : null;
+      const total = st.n ?? board().length;
+      let html = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>`;
+      if (q) html += `<div class="qt">${esc(q.t)}</div><div class="ans">✔ ${U.L[q.c]}. ${esc(q.o[q.c])}</div>`;
+      else if (b) html += `<div class="qt">${b.emoji} ${esc(b.title)}</div>`;
+      else html += `<div class="qt">👥 В игре: ${total}</div>`;
+      if (st.phase === "question") {
+        const a = st.answered || 0, pc = total ? Math.round(a / total * 100) : 0;
+        const el = st.el != null ? Math.max(0, Math.round(st.el + (Date.now() - stAt) / 1000)) : null;
+        const lim = q ? CFG.limit(q) : 0;
+        html += `<div class="prog"><i style="width:${pc}%"></i></div>
+          <div class="pstat"><b>Ответили ${a} из ${total}</b>${el != null ? `<span class="${el >= lim ? "late" : ""}">⏱ ${el} с${lim ? " / " + lim : ""}</span>` : ""}</div>`;
+        if (bd && bd.ak && total) {
+          const done = new Set(bd.ak), left = board().filter((p) => !done.has(p.k));
+          if (left.length && left.length <= 25) html += `<details class="left"><summary>Не ответили: ${left.length}</summary><div>${left.map((p) => `<button type="button" class="chip" data-k="${esc(p.k)}">${esc(p.n)}</button>`).join("")}</div></details>`;
+          else if (!left.length) html += `<div class="ans">🎉 Ответили все — можно показывать ответ</div>`;
+        }
+      }
+      const wasOpen = box.querySelector("details.left")?.open;
+      box.innerHTML = html;
+      if (wasOpen) { const d = box.querySelector("details.left"); if (d) d.open = true; }
+      box.querySelectorAll(".chip").forEach((el) => el.onclick = () => openFor(el.dataset.k));
+    }
+    // таймер вопроса на пульте тикает между сообщениями экрана
+    setInterval(() => { if (st && st.phase === "question" && !$("#pNow").querySelector("details[open]")) renderNow(); }, 1000);
+
+    function renderScreenTab() {
+      const ov = st && st.ov;
+      $("#sRating").classList.toggle("on", ov === "rating");
+      $("#sJoin").classList.toggle("on", ov === "join");
+      $("#sRating").innerHTML = ov === "rating" ? "✕ Убрать рейтинг с экрана" : "🏆 Показать рейтинг на экране";
+      $("#sJoin").innerHTML = ov === "join" ? "✕ Убрать QR с экрана" : "📷 Большой QR для входа";
+      $("#sMute").innerHTML = st && st.muted ? "🔇 Звук выключен — включить" : "🔊 Звук включён — выключить";
+      $("#sLobby").hidden = !st || st.phase === "lobby";
+    }
+    $("#sRating").onclick = () => cmd({ op: "ov", kind: st && st.ov === "rating" ? null : "rating" });
+    $("#sJoin").onclick = () => cmd({ op: "ov", kind: st && st.ov === "join" ? null : "join" });
+    $("#sMute").onclick = () => cmd({ op: "mute", on: !(st && st.muted) });
+    $("#sLobby").onclick = (ev) => { const b = ev.currentTarget; if (b.dataset.sure) { delete b.dataset.sure; b.textContent = "🏠 К выбору практики"; cmd({ op: "lobby" }, "Открыт выбор практики"); } else { b.dataset.sure = 1; b.textContent = "Точно прервать практику? Нажмите ещё раз"; setTimeout(() => { delete b.dataset.sure; b.textContent = "🏠 К выбору практики"; }, 4000); } };
+    $("#pOut").onclick = logout;
+
     let lastKey = "";
     function render() {
-      if (!st) { $("#pNow").innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
-      const b = st.block ? byId[st.block] : null, q = b && st.phase !== "intro" && st.phase !== "podium" ? b.q[st.qi] : null;
-      const key = [st.phase, st.block, st.qi, st.answered, st.next].join("|");
-      if (key !== lastKey) {
+      const key = st ? [st.phase, st.block, st.qi].join("|") : "";
+      // Экран переключился — кнопку держим ещё 0,8 с, чтобы лишнее касание не пролистало вопрос.
+      if (busy && busyKey && key !== busyKey) { clearTimeout(busy); busyKey = ""; busy = setTimeout(() => { busy = 0; renderDock(); }, 800); }
+      if (tab === null && st) setTab(st.phase === "lobby" ? "game" : "people");
+      if (st && key !== lastKey) {
+        if (lastKey && st.phase === "lobby") setTab("game");
         lastKey = key;
-        $("#pNow").innerHTML = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>
-          ${q ? `<div class="qt">${esc(q.t)}</div><div class="ans">✔ Ответ: ${U.L[q.c]}. ${esc(q.o[q.c])}</div>` : b ? `<div class="qt">${b.emoji} ${esc(b.title)}</div>` : ""}
-          ${st.phase === "question" ? `<div style="font-weight:800">Ответили: ${st.answered} из ${st.n ?? board().length}</div>` : ""}
-          <button class="btn btn--blue big" type="button" id="pNext">${esc(st.next || "Далее ▶")}</button>
-          ${st.phase !== "lobby" ? `<button class="btn btn--sm" type="button" id="pLobby">🏠 К выбору практики</button>` : ""}`;
-        $("#pNext").onclick = () => cmd({ op: "next", phase: st.phase }, "Готово");
-        const pl = $("#pLobby"); if (pl) pl.onclick = () => cmd({ op: "lobby" }, "Открыт выбор практики");
-        $("#pBlocks").innerHTML = st.phase === "lobby" ? `<div class="pblocks">${BLOCKS.map((b) => `<button class="pt" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id}</small></button>`).join("")}</div>` : "";
-        $$("#pBlocks [data-b]").forEach((t) => t.onclick = () => cmd({ op: "open", id: +t.dataset.b }, "Практика открыта"));
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch (_) {}
+        $("#pBlocks").innerHTML = `<div class="pblocks">${BLOCKS.map((b) => `<button class="pt ${st.block === b.id ? "next" : ""}" type="button" data-b="${b.id}"><span class="e">${b.emoji}</span><b>${esc(b.title)}</b><small>Слайд ${b.id} · ${b.q.length} вопр.</small></button>`).join("")}</div>`;
+        $$("#pBlocks [data-b]").forEach((t) => t.onclick = () => {
+          if (st.phase !== "lobby" && st.phase !== "podium" && !t.dataset.sure) { t.dataset.sure = 1; toast("Идёт практика. Нажмите ещё раз, чтобы переключить"); setTimeout(() => delete t.dataset.sure, 4000); return; }
+          cmd({ op: "open", id: +t.dataset.b }, "Практика открыта"); setTab("people");
+        });
+        $("#pBlocksHint").textContent = st.phase === "lobby" ? "Выберите практику — она сразу откроется на экране" : "Сейчас идёт практика. Переключение — двойным нажатием";
       }
-      renderList();
+      renderDock(); renderNow(); renderScreenTab(); renderList();
+    }
+    function openFor(k) {
+      const p = board().find((x) => x.k === k); if (!p) return;
+      openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`));
     }
     function renderList() {
-      if (!st) return;
       const q = U.normName($("#pSearch").value);
       const all = board(), arr = all.filter((p) => !q || p.k.includes(q));
+      $("#pCount").textContent = all.length;
       $("#plist").innerHTML = arr.length ? arr.map((p) => `<button class="plb" type="button" data-k="${esc(p.k)}"><span class="r">${p.r}</span>${U.av(p.k, p.n)}<span class="nm">${esc(p.n)}</span><span class="s">${p.s}</span></button>`).join("")
         : `<div class="empty">${all.length ? "Никого не нашли" : "Пока никто не зашёл в игру"}</div>`;
-      $$("#plist .plb").forEach((el) => el.onclick = () => { const p = all.find((x) => x.k === el.dataset.k); openPlayer(p, (d, r, e) => cmd({ op: "adj", k: p.k, d, r, e }, `${p.n}: ${fmtD(d)}`)); });
+      $$("#plist .plb").forEach((el) => el.onclick = () => openFor(el.dataset.k));
     }
+    $("#pSearch").oninput = renderList;
     render();
   }
 })();

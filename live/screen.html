@@ -187,6 +187,32 @@
   .pult input[type=search] { background: var(--white); width: 100%; padding: .8em 1em; border: 4px solid var(--navy); border-radius: 12px; font-weight: 800; font-size: 1rem; color: var(--navy); }
   .pult .plgrid { grid-template-columns: 1fr; }
   .pult .plb { font-size: 16px; }
+  .pult { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+  .pult h1 span { font-size: .8em; }
+  .pnow .prog { height: 12px; border-radius: 6px; background: var(--ice); overflow: hidden; border: 2px solid var(--navy); }
+  .pnow .prog i { display: block; height: 100%; background: var(--navy); transition: width .4s; }
+  .pnow .pstat { display: flex; justify-content: space-between; font-weight: 800; }
+  .pnow .pstat .late { color: #C0182B; }
+  .pnow details.left summary { font-weight: 800; cursor: pointer; }
+  .pnow details.left div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .pnow .chip { border: 2px solid var(--navy); border-radius: 999px; padding: .3em .7em; font-weight: 700; background: var(--white); color: var(--navy); font-size: .85rem; }
+  .ptabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; position: sticky; top: 0; z-index: 5; padding: 4px 0; }
+  .ptabs button { padding: .75em .4em; border-radius: 12px; border: 3px solid var(--navy); background: var(--white); color: var(--navy); font-weight: 800; font-size: .88rem; }
+  .ptabs button.on { background: var(--navy); color: var(--white); border-color: var(--white); }
+  .pult .hint { margin: 0 0 8px; font-weight: 700; color: var(--dim); font-size: .9rem; }
+  .pult #pt-people { display: grid; gap: 10px; }
+  .pult #pt-people[hidden], .pscreen[hidden] { display: none; }
+  .pscreen { display: grid; gap: 10px; }
+  .sbtn { text-align: left; padding: 1em 1.1em; border-radius: 14px; border: 3px solid var(--navy); background: var(--white); color: var(--navy); font-weight: 800; font-size: 1rem; box-shadow: 3px 3px 0 var(--navy); }
+  .sbtn.on { background: var(--navy); color: var(--white); border-color: var(--white); }
+  .pdock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 10px; padding: 12px max(16px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); background: var(--navy); }
+  .pdock .btn { margin: 0; }
+  .pdock #pNext { flex: 1; font-size: 1.1rem; padding: 1.1em; }
+  .pdock #pBack { flex: 0 0 auto; max-width: 40%; font-size: .8rem; padding: .8em; }
+  .pdock .btn:disabled { opacity: .6; }
+  .pdock { max-width: 620px; margin: 0 auto; }
+  #v-pult:not([hidden]) ~ .toast-stack { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  @media (min-width: 621px) { .pdock { border-radius: 16px 16px 0 0; } }
 
   @media (max-width: 900px) {
     body { overflow: auto; }
@@ -235,16 +261,33 @@
 
 <section class="scr" id="v-pult" hidden>
   <div class="pult">
-    <div class="row1"><h1 class="logo">📱 Пульт</h1><span class="pill"><span class="dot" id="pNetDot"></span><span id="pNet">связь…</span></span></div>
-    <select class="room-select" id="pultRoom" aria-label="Выберите учебный класс для пульта">
-      <option value="class1">Учебный класс 1</option>
-      <option value="class2">Учебный класс 2</option>
-    </select>
+    <div class="row1"><h1 class="logo">📱 Пульт · <span id="pRoomName"></span></h1><span class="pill"><span class="dot" id="pNetDot"></span><span id="pNet">связь…</span></span></div>
     <div class="pnow sticker" id="pNow"></div>
-    <div id="pBlocks"></div>
-    <input type="search" id="pSearch" placeholder="Найти ученика для штрафа или бонуса" aria-label="Найти ученика">
-    <div class="plgrid" id="plist"></div>
-    <button class="btn btn--navy" type="button" id="pOut">Выйти</button>
+    <div class="ptabs" role="tablist">
+      <button type="button" data-tab="game">🎯 Практики</button>
+      <button type="button" data-tab="people">👥 Ученики <span id="pCount">0</span></button>
+      <button type="button" data-tab="screen">🖥 Экран</button>
+    </div>
+    <div id="pt-game" hidden><p class="hint" id="pBlocksHint"></p><div id="pBlocks"></div></div>
+    <div id="pt-people" hidden>
+      <input type="search" id="pSearch" placeholder="Найти ученика для штрафа или бонуса" aria-label="Найти ученика">
+      <div class="plgrid" id="plist"></div>
+    </div>
+    <div id="pt-screen" hidden class="pscreen">
+      <button class="sbtn" type="button" id="sRating"></button>
+      <button class="sbtn" type="button" id="sJoin"></button>
+      <button class="sbtn" type="button" id="sMute"></button>
+      <button class="sbtn" type="button" id="sLobby">🏠 К выбору практики</button>
+      <select class="room-select" id="pultRoom" aria-label="Выберите учебный класс для пульта">
+        <option value="class1">Учебный класс 1</option>
+        <option value="class2">Учебный класс 2</option>
+      </select>
+      <button class="btn btn--navy" type="button" id="pOut">Выйти из пульта</button>
+    </div>
+  </div>
+  <div class="pdock">
+    <button class="btn" type="button" id="pBack" hidden></button>
+    <button class="btn btn--blue" type="button" id="pNext">Ждём экран…</button>
   </div>
 </section>
 
@@ -256,6 +299,6 @@
 <script src="questions.js?v=6"></script>
 <script src="common.js?v=13"></script>
 <script src="music.js?v=5"></script>
-<script src="screen.js?v=13"></script>
+<script src="screen.js?v=14"></script>
 </body>
 </html>
