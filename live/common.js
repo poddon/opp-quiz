@@ -6,7 +6,7 @@
   // Ссылки без ?room= сохраняют совместимость с первым классом.
   const roomId = qs.get("room") === "class2" ? "class2" : "class1";
   const localMode = qs.get("lan") === "1";
-  const brokerNames = { emqx: "EMQX", hivemq: "HiveMQ", mosquitto: "Mosquitto" };
+  const brokerNames = { emqx: "EMQX", hivemq: "HiveMQ", eclipse: "Eclipse", mosquitto: "Mosquitto" };
   const requestedNet = qs.get("net");
   const netId = Object.hasOwn(brokerNames, requestedNet) ? requestedNet : "emqx";
   const roomUrl = (page, id = roomId, pult = false) => {
@@ -37,11 +37,13 @@
     screenUrl: (id = roomId, pult = false) => roomUrl("screen.html", id, pult),
     loginHash: "839471ac87f97a9ae4668ec270ef0a42f2f85c1befca094e6ae2998bc84ca324",
     // Публичные брокеры не обмениваются сообщениями между собой, поэтому экран
-    // ведущего слушает ВСЕ сразу, а телефон держит одно соединение: сначала с
-    // сервером из QR-кода, при сбое — автоматически переходит на следующий.
+    // ведущего слушает ВСЕ сразу. Телефон стучится во все одновременно и остаётся
+    // на том, через который ПЕРВЫМ пришёл сигнал от экрана ведущего.
+    // Eclipse работает на обычном порту 443 — проходит через школьные фильтры.
     brokers: [netId, ...Object.keys(brokerNames).filter((k) => k !== netId)].map((k) => ({
       emqx: "wss://broker.emqx.io:8084/mqtt",
       hivemq: "wss://broker.hivemq.com:8884/mqtt",
+      eclipse: "wss://mqtt.eclipseprojects.io:443/mqtt",
       mosquitto: "wss://test.mosquitto.org:8081/mqtt"
     }[k])),
     maxPts: 1000,                 // за верный ответ: от 500 (в последнюю секунду) до 1000 (мгновенно)
@@ -170,7 +172,7 @@
         const payload = body.slice(off);
         if (!payload.length) return;
         let obj = null; try { obj = JSON.parse(dec.decode(payload)); } catch (_) { return; }
-        this.owner._msg(topic, obj, !!retain);
+        this.owner._msg(topic, obj, !!retain, this);
       }
     }
     raw(bytes) {
@@ -193,52 +195,55 @@
   }
 
   // mode "all": одно соединение с каждым сервером (экран ведущего).
-  // mode "failover": одно соединение, при сбое переход на следующий сервер (телефоны).
+  // mode "race": телефон подключается ко всем серверам сразу и выбирает тот,
+  // через который первым пришло состояние от экрана ведущего; остальные закрывает.
+  // Если выбранный сервер замолчал — снова «гонка» по всем.
   class Net {
-    constructor(urls, mode = "failover") {
+    constructor(urls, mode = "race") {
       this.subs = new Set(); this.handlers = []; this.statusFns = []; this.seen = new Map();
       this.local = CFG.localMode; this.ws = null; this.localUp = false; this.localTimer = null; this.localRx = 0;
       this.links = []; this.urls = urls; this.mode = mode;
+      this.hostT = CFG.topic("st"); this.plT = CFG.topic("pl/"); this.active = null; this.activeRx = 0; this.activeDown = 0;
       if (this.local) {
         this.openLocal();
         // Wi-Fi может «молча» оборвать соединение: сервер шлёт ping каждые 15 с.
         setInterval(() => {
           if (this.localUp && Date.now() - this.localRx > 40000) try { this.ws.close(); } catch (_) {}
         }, 5000);
-      } else if (mode === "all" || urls.length < 2) this.links = urls.map((u) => new Link(u, this));
-      else this.startFailover();
+      } else {
+        this.links = urls.map((u) => new Link(u, this));
+        if (mode === "race" && urls.length > 1) setInterval(() => this.watch(), 2000);
+      }
       window.addEventListener("online", () => this.reconnect());
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) this.reconnect();
       });
     }
-    startFailover() {
-      // Помним сервер, который сработал на этом телефоне, — после перезагрузки
-      // страницы подключаемся сразу к нему, без ожидания.
-      const memo = U.store.get("opp.net.ok", null);
-      this.ai = memo && memo.net === CFG.netId && Date.now() - memo.t < 4 * 3600e3 && this.urls[memo.i] ? memo.i : 0;
-      this.everUp = false; this.downSince = Date.now();
-      this.links = [new Link(this.urls[this.ai], this)];
-      setInterval(() => {
-        const l = this.links[0];
-        if (!l || l.up) return;
-        // Новый сервер: ждём 8 с. Работавший и отвалившийся: даём 12 с на переподключение.
-        if (Date.now() - this.downSince > (this.everUp ? 12000 : 8000)) this.switchBroker();
-      }, 1000);
+    // Выбран сервер: закрываем лишние соединения.
+    choose(link) {
+      this.active = link; this.activeRx = Date.now(); this.activeDown = 0;
+      this.links.forEach((l) => { if (l !== link) l.stop(); });
+      this.links = [link];
+      this._status();
     }
-    switchBroker() {
-      this.links[0].stop();
-      this.ai = (this.ai + 1) % this.urls.length;
-      this.everUp = false; this.downSince = Date.now();
-      this.links = [new Link(this.urls[this.ai], this)];
+    // Экран ведущего шлёт состояние минимум раз в 10 с. Тишина 25 с или обрыв 3 с —
+    // заново подключаемся ко всем серверам и выбираем самый быстрый.
+    watch() {
+      const a = this.active;
+      if (!a) return;
+      const silent = Date.now() - this.activeRx > 25000;
+      const down = !a.up && this.activeDown && Date.now() - this.activeDown > 3000;
+      if (!silent && !down) return;
+      this.active = null;
+      this.links = this.urls.map((u) => (u === a.url && !a.stopped ? a : new Link(u, this)));
       this._status();
     }
     _linkState(link, up) {
-      if (this.mode !== "failover" || link !== this.links[0]) return;
-      if (up) {
-        this.everUp = true;
-        U.store.set("opp.net.ok", { net: CFG.netId, i: this.ai, t: Date.now() });
-      } else this.downSince = Date.now();
+      if (link === this.active) this.activeDown = up ? 0 : Date.now();
+      // Новое соединение во время «гонки»: просим экран ведущего сразу отозваться.
+      if (up && this.mode === "race" && !this.active) setTimeout(() => {
+        if (!this.active && link.up) link.publish(CFG.topic("up"), enc.encode(JSON.stringify({ ty: "hi", mid: "hi" + Math.random().toString(36).slice(2, 10) })), false);
+      }, 50);
     }
     openLocal() {
       if (this.localTimer || (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING))) return;
@@ -273,6 +278,14 @@
     }
     get online() { return this.local ? (this.localUp ? 1 : 0) : this.links.filter((l) => l.up).length; }
     get total() { return this.local ? 1 : this.links.length; }
+    // Имя сервера, через который телефон сейчас связан с экраном (для подсказки в интерфейсе).
+    get serverName() {
+      if (this.local) return "локальная сеть";
+      const l = this.active || this.links.find((x) => x.up);
+      if (!l) return "";
+      const host = new URL(l.url).hostname;
+      return host.includes("emqx") ? "EMQX" : host.includes("hivemq") ? "HiveMQ" : host.includes("eclipse") ? "Eclipse" : host.includes("mosquitto") ? "Mosquitto" : host;
+    }
     sub(topic) {
       if (this.subs.has(topic)) return;
       this.subs.add(topic);
@@ -292,7 +305,16 @@
     on(fn) { this.handlers.push(fn); }
     onStatus(fn) { this.statusFns.push(fn); fn(this.online, this.total); }
     _status() { this.statusFns.forEach((f) => f(this.online, this.total)); }
-    _msg(topic, obj, retained) {
+    _msg(topic, obj, retained, link) {
+      if (link && this.mode === "race") {
+        if (this.active && link !== this.active) return;
+        // Выбираем сервер только по ЖИВОМУ сообщению экрана (не по сохранённому
+        // retained — оно могло остаться от прошлого занятия на сервере без ведущего).
+        if (!retained && (topic === this.hostT || topic.startsWith(this.plT))) {
+          if (!this.active) this.choose(link);
+          this.activeRx = Date.now();
+        }
+      }
       if (obj && obj.mid) {
         if (this.seen.has(obj.mid)) return;
         this.seen.set(obj.mid, Date.now());

@@ -25,7 +25,7 @@
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
-    $("#nettxt").textContent = !on ? "нет связи — ищем сервер" : !hostAlive() ? "ожидаем экран" : !me ? "регистрируем…" : "на связи";
+    $("#nettxt").textContent = !on ? "нет связи — ищем сервер" : !hostAlive() ? "ищем экран ведущего…" : !me ? "регистрируем…" : "на связи · " + net.serverName;
   }
   net.onStatus((on) => { netStatus(); if (on && prof.name) { lastHello = 0; hello(); } });
   setInterval(netStatus, 3000);

@@ -48,7 +48,7 @@
     hkey = await U.hmacKey("opp-public-host-v1");
     $("#v-login").hidden = true;
     // Большой экран слушает все серверы сразу, пульт — один с автопереключением.
-    net = new Net(CFG.brokers, isPult ? "failover" : "all");
+    net = new Net(CFG.brokers, isPult ? "race" : "all");
     isPult ? startPult() : startHost();
   }
 
@@ -111,7 +111,7 @@
     $("#bSound").textContent = SFX.muted ? "🔇" : "🔊";
     $("#v-host").hidden = false;
 
-    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = !on ? "нет связи" : CFG.localMode ? "Локальная сеть · подключено" : `серверов на связи: ${on} из ${tot}`; if (on) broadcast(true); });
+    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = !on ? "нет связи" : CFG.localMode ? "Локальная сеть · подключено" : `серверов на связи: ${on} из ${tot}` + (on < tot ? " ⚠" : ""); if (on) broadcast(true); });
     net.sub(T_UP); net.sub(T_ADM); net.sub(T_ST);
     net.on((topic, m) => {
       if (topic === T_UP) onUp(m);
@@ -143,6 +143,8 @@
     let newName = null;
 
     function onUp(m) {
+      // Телефон или пульт ищет сервер с экраном — отвечаем живым состоянием.
+      if (m && m.ty === "hi") { broadcast(); return; }
       if (!m || typeof m !== "object" || typeof m.name !== "string") return;
       const key = U.normName(m.name);
       const before = S.players[key];
