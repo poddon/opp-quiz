@@ -450,7 +450,7 @@
       const g = G(), arr = ranked(), top = arr.slice(0, 5), qid = curQid();
       stage.innerHTML = `<div class="board"><h1 class="pop">Рейтинг</h1><div class="brows" id="brows">
         ${top.map((p, i) => { const a = p.ans[qid]; const gain = a && a.pts ? a.pts : 0;
-          return `<div class="brow ${i === 0 ? "lead" : ""}" data-k="${esc(p.key)}"><span class="r">${p._r}</span>${U.av(p.key, p.name)}<span class="nm">${esc(p.name)}</span>${p.streak > 1 ? `<span class="st">🔥${p.streak}</span>` : ""}${gain ? `<span class="gain">+${gain}</span>` : ""}<span class="s" data-from="${g.prev[p.key] ?? p.score}" data-to="${p.score}">${g.prev[p.key] ?? p.score}</span></div>`; }).join("")}
+          return `<div class="brow ${i === 0 ? "lead" : ""}" data-k="${esc(p.key)}"><span class="r">${p._r}</span>${U.av(p.key, p.name)}<span class="nm">${esc(p.name)}</span>${p.streak > 1 ? `<span class="st">🔥${p.streak}</span>` : ""}${gain ? `<span class="gain">+${gain}</span>` : ""}<span class="s" data-from="${(g.prev[p.key] != null ? g.prev[p.key] : p.score)}" data-to="${p.score}">${(g.prev[p.key] != null ? g.prev[p.key] : p.score)}</span></div>`; }).join("")}
         </div>${arr.length > 5 ? `<div class="bmore">и ещё ${arr.length - 5} ${U.plural(arr.length - 5, "игрок", "игрока", "игроков")} — нажмите «🏆 Рейтинг», чтобы увидеть всех</div>` : arr.length ? "" : `<div class="bmore">Пока никто не играет</div>`}</div>`;
       // анимация: строки едут с прежних мест, очки дорастают
       const rows = $$("#brows .brow"), h = rows[0] ? rows[0].getBoundingClientRect().height + 8 : 0;
@@ -628,7 +628,7 @@
       const box = $("#pNow");
       if (!st) { box.innerHTML = `<div class="ph">Ждём большой экран…</div><p style="margin:0;font-weight:700">Откройте экран ведущего на компьютере у проектора.</p>`; return; }
       const b = st.block ? byId[st.block] : null, q = b && st.phase !== "intro" && st.phase !== "podium" && st.phase !== "lobby" ? b.q[st.qi] : null;
-      const total = st.n ?? board().length;
+      const total = st.n != null ? st.n : board().length;
       let html = `<div class="ph">${PH[st.phase] || ""}${b ? ` · слайд ${b.id}${q ? ` · вопрос ${st.qi + 1}/${b.q.length}` : ""}` : ""}</div>`;
       if (q) html += `<div class="qt">${esc(q.t)}</div><div class="ans">✔ ${U.L[q.c]}. ${esc(q.o[q.c])}</div>`;
       else if (b) html += `<div class="qt">${b.emoji} ${esc(b.title)}</div>`;
@@ -645,7 +645,7 @@
           else if (!left.length) html += `<div class="ans">🎉 Ответили все — можно показывать ответ</div>`;
         }
       }
-      const wasOpen = box.querySelector("details.left")?.open;
+      const oldD = box.querySelector("details.left"), wasOpen = !!(oldD && oldD.open);
       box.innerHTML = html;
       if (wasOpen) { const d = box.querySelector("details.left"); if (d) d.open = true; }
       box.querySelectorAll(".chip").forEach((el) => el.onclick = () => openFor(el.dataset.k));
