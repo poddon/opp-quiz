@@ -13,6 +13,7 @@
   const saveProf = () => U.store.set(profileKey, prof);
   saveProf();
 
+  let lastAsk = 0;
   let st = null, stAt = 0, me = null, deadline = 0, view = "", resultShown = {};
   const pending = {};   // qid -> {a, t}
 
@@ -33,6 +34,9 @@
   net.on((topic, msg) => {
     if (topic === T_ST) {
       if (st && msg.ts < st.ts) return;
+      // Короткий «пульс» экрана приходит без рейтинга — оставляем рейтинг из прошлого сообщения.
+      if (!msg.board && st && st.board && st.sid === msg.sid && st.phase === msg.phase && st.block === msg.block && st.qi === msg.qi) msg.board = st.board;
+      else if (!msg.board && (msg.phase === "reveal" || msg.phase === "board" || msg.phase === "podium") && Date.now() - lastAsk > 2000) { lastAsk = Date.now(); net.askHost(); }
       const prev = st; st = msg; stAt = Date.now();
       if (prev && prev.sid !== st.sid && prof.name) { me = null; hello(); }
       netStatus(); render();
@@ -212,6 +216,13 @@
 
   function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("#toasts").appendChild(d); setTimeout(() => d.remove(), 2600); }
   document.addEventListener("pointerdown", () => SFX.unlock(), { once: true });
+  // Пока идёт игра, экран телефона не гаснет — соединение не «засыпает» между вопросами.
+  let wake = null;
+  async function keepAwake() {
+    try { if (prof.name && !wake && navigator.wakeLock && !document.hidden) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } } catch (_) {}
+  }
+  document.addEventListener("pointerdown", keepAwake);
+  document.addEventListener("visibilitychange", keepAwake);
   // долгое нажатие на имя — сменить игрока
   let lp = 0;
   $("#bottom").addEventListener("pointerdown", () => { lp = setTimeout(() => { if (confirmSwitch()) { prof.name = ""; me = null; saveProf(); view = ""; render(); } }, 1200); });

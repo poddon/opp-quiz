@@ -45,6 +45,7 @@
     // ведущего слушает ВСЕ сразу. Телефон стучится во все одновременно и остаётся
     // на том, через который ПЕРВЫМ пришёл сигнал от экрана ведущего.
     // Eclipse работает на обычном порту 443 — проходит через школьные фильтры.
+    brokerIds: [netId, ...Object.keys(brokerNames).filter((k) => k !== netId)],
     brokers: [netId, ...Object.keys(brokerNames).filter((k) => k !== netId)].map((k) => ({
       emqx: "wss://broker.emqx.io:8084/mqtt",
       hivemq: "wss://broker.hivemq.com:8884/mqtt",
@@ -55,6 +56,11 @@
     streakBonus: 100,             // +100 за каждый верный подряд, максимум +500
     limit: (q) => (q.p === 15 ? 45 : 25)   // секунд на вопрос: расчётные — дольше
   };
+  CFG.brokerName = (url) => brokerNames[CFG.brokerIds[CFG.brokers.indexOf(url)]] || "";
+  // ?srv=eclipse,emqx — серверы, к которым экран ведущего реально подключён (их кладёт
+  // в QR сам экран). Телефон сначала стучится только в них, не тратя время на недоступные.
+  CFG.srv = (qs.get("srv") || "").split(",").filter((k) => Object.prototype.hasOwnProperty.call(brokerNames, k));
+  CFG.liveSrv = [];
   // Резервный публичный брокер выбирается ведущим; QR код передаёт тот же net.
   CFG.topic = (s) => `${CFG.base}/${CFG.room}/${s}`;
 
@@ -162,10 +168,10 @@
           if (topics.length) this.subscribe(topics);
           clearInterval(this.ping);
           this.ping = setInterval(() => {
-            if (Date.now() - this.lastRx > 65000) {
+            if (Date.now() - this.lastRx > 25000) {
               try { this.ws.close(); } catch (_) {}
             } else this.raw(new Uint8Array([0xC0, 0]));
-          }, 18000);
+          }, 10000);
         } else { try { this.ws.close(); } catch (_) {} }
       } else if (t === 3) {
         if (body.length < 2) return;
@@ -216,13 +222,19 @@
           if (this.localUp && Date.now() - this.localRx > 40000) try { this.ws.close(); } catch (_) {}
         }, 5000);
       } else {
+        if (mode === "race" && CFG.srv.length) {
+          const pref = CFG.srv.map((k) => urls[CFG.brokerIds.indexOf(k)]).filter(Boolean);
+          if (pref.length) { this.allUrls = urls; this.urls = urls = pref; this.started = Date.now(); }
+        }
         this.links = urls.map((u) => new Link(u, this));
-        if (mode === "race" && urls.length > 1) setInterval(() => this.watch(), 2000);
+        if (mode === "race") setInterval(() => this.watch(), 1000);
       }
-      window.addEventListener("online", () => this.reconnect());
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) this.reconnect();
-      });
+      window.addEventListener("online", () => this.reconnect(true));
+      // Телефон разблокировали / вернулись во вкладку: соединение могло «замёрзнуть»,
+      // поэтому сразу проверяем связь, не дожидаясь таймаутов.
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) this.reconnect(true); });
+      window.addEventListener("pageshow", (e) => { if (e.persisted) this.reconnect(true); });
+      window.addEventListener("focus", () => this.reconnect(true));
     }
     // Выбран сервер: закрываем лишние соединения.
     choose(link) {
@@ -231,23 +243,45 @@
       this.links = [link];
       this._status();
     }
-    // Экран ведущего шлёт состояние минимум раз в 10 с. Тишина 25 с или обрыв 3 с —
-    // заново подключаемся ко всем серверам и выбираем самый быстрый.
+    // Экран ведущего шлёт состояние каждые 3 с. Тишина 6,5 с или обрыв 3 с —
+    // заново подключаемся ко всем серверам и выбираем тот, где экран ответит первым
+    // (это может оказаться и прежний сервер — тогда просто продолжаем на нём).
     watch() {
       const a = this.active;
+      // Экран не нашёлся на серверах из QR за 8 с — пробуем все остальные.
+      if (!a && this.allUrls && Date.now() - this.started > 8000) {
+        const extra = this.allUrls.filter((u) => !this.urls.includes(u));
+        this.urls = this.allUrls; this.allUrls = null;
+        extra.forEach((u) => this.links.push(new Link(u, this)));
+        this._status();
+      }
       if (!a) return;
-      const silent = Date.now() - this.activeRx > 25000;
+      const silent = Date.now() - this.activeRx > 6500;
       const down = !a.up && this.activeDown && Date.now() - this.activeDown > 3000;
-      if (!silent && !down) return;
+      if (silent || down) this.rerace();
+    }
+    rerace() {
+      const a = this.active;
+      if (!a) return;
       this.active = null;
       this.links = this.urls.map((u) => (u === a.url && !a.stopped ? a : new Link(u, this)));
+      if (a.up && !a.stopped) this.hi(a);
       this._status();
+    }
+    // Попросить экран ведущего сразу прислать полное состояние.
+    askHost() {
+      if (this.local) return this.localSend({ type: "publish", topic: CFG.topic("up"), obj: { ty: "hi" }, retain: false });
+      const l = this.active || this.links.find((x) => x.up);
+      if (l && l.up) this.hi(l);
+    }
+    hi(link) {
+      link.publish(CFG.topic("up"), enc.encode(JSON.stringify({ ty: "hi", mid: "hi" + Math.random().toString(36).slice(2, 10) })), false);
     }
     _linkState(link, up) {
       if (link === this.active) this.activeDown = up ? 0 : Date.now();
       // Новое соединение во время «гонки»: просим экран ведущего сразу отозваться.
       if (up && this.mode === "race" && !this.active) setTimeout(() => {
-        if (!this.active && link.up) link.publish(CFG.topic("up"), enc.encode(JSON.stringify({ ty: "hi", mid: "hi" + Math.random().toString(36).slice(2, 10) })), false);
+        if (!this.active && link.up) this.hi(link);
       }, 50);
     }
     openLocal() {
@@ -287,10 +321,10 @@
     get serverName() {
       if (this.local) return "локальная сеть";
       const l = this.active || this.links.find((x) => x.up);
-      if (!l) return "";
-      const host = new URL(l.url).hostname;
-      return host.includes("emqx") ? "EMQX" : host.includes("hivemq") ? "HiveMQ" : host.includes("eclipse") ? "Eclipse" : host.includes("mosquitto") ? "Mosquitto" : host;
+      return l ? CFG.brokerName(l.url) : "";
     }
+    // id серверов, с которыми сейчас есть связь (для экрана ведущего)
+    get upIds() { return this.links.filter((l) => l.up).map((l) => CFG.brokerIds[CFG.brokers.indexOf(l.url)]).filter(Boolean); }
     sub(topic) {
       if (this.subs.has(topic)) return;
       this.subs.add(topic);
@@ -303,9 +337,15 @@
       let ok = 0; this.links.forEach((l) => { if (l.publish(topic, payload, retain)) ok++; });
       return ok;
     }
-    reconnect() {
-      if (this.local) { if (!this.localUp) this.openLocal(); }
-      else this.links.forEach((l) => l.wake());
+    reconnect(check) {
+      if (this.local) {
+        if (!this.localUp) this.openLocal();
+        else if (check && Date.now() - this.localRx > 20000) try { this.ws.close(); } catch (_) {}
+        return;
+      }
+      this.links.forEach((l) => l.wake());
+      // Экран шлёт сигнал каждые 3 с: если с выбранного сервера давно тихо — сразу ищем заново.
+      if (check && this.mode === "race" && this.active && Date.now() - this.activeRx > 3500) this.rerace();
     }
     on(fn) { this.handlers.push(fn); }
     onStatus(fn) { this.statusFns.push(fn); fn(this.online, this.total); }
@@ -411,7 +451,11 @@
       for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
       return `<svg viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR-код"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#071A5C"/></svg>`;
     },
-    joinUrl: () => CFG.joinUrl,
+    joinUrl: () => U.withSrv(CFG.joinUrl),
+    withSrv(href) {
+      if (CFG.localMode || !CFG.liveSrv.length) return href;
+      const u = new URL(href); u.searchParams.set("srv", CFG.liveSrv.join(",")); return u.href;
+    },
     av(key, name, extra = "") { let h = 0; for (const ch of key || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0; return `<span class="av k${h % 6} ${extra}">${U.esc(U.initials(name))}</span>`; },
     L: "АБВГД",
     qid: (b, i) => b + "." + i

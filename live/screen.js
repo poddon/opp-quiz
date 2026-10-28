@@ -111,7 +111,29 @@
     $("#bSound").textContent = SFX.muted ? "🔇" : "🔊";
     $("#v-host").hidden = false;
 
-    net.onStatus((on, tot) => { $("#hNetDot").classList.toggle("on", on > 0); $("#hNet").textContent = !on ? "нет связи" : CFG.localMode ? "Локальная сеть · подключено" : `серверов на связи: ${on} из ${tot}` + (on < tot ? " ⚠" : ""); if (on) broadcast(true); });
+    // Показываем, через какие серверы идёт связь, и кладём их в QR-код: телефоны
+    // подключатся сразу к рабочим. Набор в QR только расширяется — уже отсканированные
+    // ссылки остаются верными, даже если сервер ненадолго отвалился.
+    let qrT = 0;
+    net.onStatus((on) => {
+      $("#hNetDot").classList.toggle("on", on > 0);
+      if (CFG.localMode) { $("#hNet").textContent = on ? "Локальная сеть · подключено" : "нет связи"; }
+      else {
+        const ids = net.upIds;
+        $("#hNet").textContent = on ? "на связи: " + ids.map((k) => CFG.brokerName(CFG.brokers[CFG.brokerIds.indexOf(k)])).join(", ") : "нет связи с серверами";
+        const add = ids.filter((k) => !CFG.liveSrv.includes(k));
+        if (add.length) {
+          CFG.liveSrv = CFG.brokerIds.filter((k) => CFG.liveSrv.includes(k) || ids.includes(k));
+          clearTimeout(qrT); qrT = setTimeout(refreshQR, 1500);
+        }
+      }
+      if (on) broadcast(true);
+    });
+    function refreshQR() {
+      const ph = G().phase;
+      if (ovKind === "join" || ovKind === "pult") openOverlay(ovKind);
+      else if (ph === "lobby" || ph === "intro") render(true);
+    }
     net.sub(T_UP); net.sub(T_ADM); net.sub(T_ST);
     net.on((topic, m) => {
       if (topic === T_UP) onUp(m);
@@ -317,8 +339,9 @@
     let bT = 0, lastB = 0, bdT = 0, lastBd = 0;
     const RANK_PHASES = { reveal: 1, board: 1, podium: 1 };
     function boardList() { return ranked().map((p) => ({ k: p.key, n: p.name, s: p.score, r: p._r })); }
-    function broadcast(now) {
-      clearTimeout(bT);
+    // light: короткий «пульс» без рейтинга (телефоны держат рейтинг из прошлого сообщения).
+    function broadcast(now, light) {
+      if (!light) clearTimeout(bT);
       const go = () => {
         lastB = Date.now();
         const g = G(), arr = ranked();
@@ -329,9 +352,10 @@
           back: backLabel(), ov: ovKind, muted: SFX.muted,
           el: g.phase === "question" ? Math.round((Date.now() - g.qStart) / 1000) : null
         };
-        if (RANK_PHASES[g.phase]) msg.board = boardList();
-        net.pub(T_ST, msg, true);
-        pubBoard(now);
+        if (RANK_PHASES[g.phase] && !light) msg.board = boardList();
+        // «пульс» не сохраняем на сервере (retain), чтобы там оставалось полное состояние с рейтингом
+        net.pub(T_ST, msg, !light);
+        if (!light) pubBoard(now);
       };
       if (now) go(); else bT = setTimeout(go, Math.max(0, 1000 - (Date.now() - lastB)));
     }
@@ -345,7 +369,10 @@
       };
       if (now) go(); else bdT = setTimeout(go, Math.max(0, 1500 - (Date.now() - lastBd)));
     }
-    setInterval(() => broadcast(true), 10000);
+    // Пульс каждые 3 с: по нему телефоны понимают, что связь живая, а пропущенный
+    // переход к следующему вопросу доходит не позже чем через 3 с. Полное состояние — раз в 15 с.
+    let beats = 0;
+    setInterval(() => { beats++; broadcast(true, beats % 5 !== 0); }, 3000);
 
     async function onAdm(m) {
       if (!m || !m.cmd || !m.sig || !m.n || !m.ts) return;
@@ -492,7 +519,7 @@
           <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(70vh,80vw)">${joinQR()}</div>
           <p style="font-weight:800;font-size:1.4em;margin:0">${esc(CFG.roomName)} · наведите камеру телефона</p></div>`;
       } else if (kind === "pult") {
-        const url = CFG.screenUrl(CFG.roomId, true);
+        const url = U.withSrv(CFG.screenUrl(CFG.roomId, true));
         ov.innerHTML = `<div class="ovhead"><h2>📱 Пульт на телефоне</h2><button class="btn" type="button" data-close>Закрыть</button></div>
           <div class="ovbody" style="display:grid;place-items:center;text-align:center;gap:1em"><div class="card" style="padding:1em;width:min(80vw,22em)">${U.qrSvg(url)}</div>
           <p style="max-width:40ch;font-weight:700;color:var(--dim);margin:0">Пульт управления: ${esc(CFG.roomName)}. Отсканируйте QR-код телефоном. Пароль не нужен. Можно листать вопросы и управлять баллами именно этого класса.</p></div>`;
