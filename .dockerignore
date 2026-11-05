@@ -1,0 +1,12 @@
+.git
+.gitignore
+.github
+node_modules
+**/node_modules
+*.zip
+*.rar
+*.pptx
+*.pdf
+*.xlsx
+*.docx
+.DS_Store
