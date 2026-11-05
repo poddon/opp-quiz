@@ -1,0 +1,46 @@
+name: Check classroom quiz server
+
+on:
+  push:
+    paths:
+      - "live/**"
+      - "lan-server/**"
+      - "Dockerfile"
+      - ".github/workflows/check-quiz-server.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-and-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript
+        run: |
+          node --check live/common.js
+          node --check live/student.js
+          node --check live/screen.js
+          node --check lan-server/server.js
+          node --check lan-server/load-test.mjs
+      - name: Start server and test HTTP / WebSocket
+        run: |
+          PORT=8080 node lan-server/server.js > /tmp/opp-quiz-server.log 2>&1 &
+          echo $! > /tmp/opp-quiz-server.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsSI http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/?room=class2 > /tmp/redirect.html || true
+          node lan-server/load-test.mjs ws://127.0.0.1:8080/ws 50
+      - name: Build Cloud.ru image
+        run: docker build --pull -t opp-quiz:cloud-test .
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/opp-quiz-server.log || true
