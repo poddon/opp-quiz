@@ -37,9 +37,30 @@ function sendHttp(res, status, text) {
 }
 
 const server = http.createServer((req, res) => {
-  let pathname;
-  try { pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname); }
-  catch (_) { return sendHttp(res, 400, "Bad request"); }
+  let pathname, requested;
+  try {
+    requested = new URL(req.url, "http://localhost");
+    pathname = decodeURIComponent(requested.pathname);
+  } catch (_) { return sendHttp(res, 400, "Bad request"); }
+
+  if (pathname === "/healthz") {
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
+  // Cloud.ru и локальный Wi-Fi: запускаем обмен по /ws, а не через
+  // заблокированные внешние MQTT-серверы. QR наследует режим автоматически.
+  if ((pathname === "/" || pathname === "/index.html" || pathname === "/screen.html") &&
+      requested.searchParams.get("lan") !== "1") {
+    requested.searchParams.set("lan", "1");
+    requested.searchParams.delete("net");
+    requested.searchParams.delete("srv");
+    res.writeHead(302, { Location: requested.pathname + requested.search, "Cache-Control": "no-store" });
+    return res.end();
+  }
 
   let file = path.resolve(WEB_ROOT, "." + pathname);
   if (file !== WEB_ROOT && !file.startsWith(WEB_ROOT + path.sep)) return sendHttp(res, 403, "Forbidden");
