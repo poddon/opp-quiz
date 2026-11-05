@@ -26,9 +26,17 @@
   function netStatus() {
     const on = net.online;
     $("#netdot").classList.toggle("on", on > 0 && hostAlive());
-    $("#nettxt").textContent = !on ? "нет связи — ищем сервер" : !hostAlive() ? "ищем экран ведущего…" : !me ? "регистрируем…" : "на связи · " + net.serverName;
+    $("#nettxt").textContent = !on ? "нет связи — ищем сервер" : !hostAlive() ? "ищем экран ведущего…" : !me ? "подтверждаем участие…" : "на связи · " + net.serverName;
   }
-  net.onStatus((on) => { netStatus(); if (on && prof.name) { lastHello = 0; hello(); } });
+  net.onStatus((on) => {
+    netStatus();
+    if (on && prof.name && !me) {
+      // После переподключения заново подписываемся на ответ преподавателя.
+      net.resub(T_ME);
+      lastHello = 0;
+      hello();
+    }
+  });
   setInterval(netStatus, 3000);
 
   net.on((topic, msg) => {
@@ -38,7 +46,10 @@
       if (!msg.board && st && st.board && st.sid === msg.sid && st.phase === msg.phase && st.block === msg.block && st.qi === msg.qi) msg.board = st.board;
       else if (!msg.board && (msg.phase === "reveal" || msg.phase === "board" || msg.phase === "podium") && Date.now() - lastAsk > 2000) { lastAsk = Date.now(); net.askHost(); }
       const prev = st; st = msg; stAt = Date.now();
-      if (prev && prev.sid !== st.sid && prof.name) { me = null; hello(); }
+      if (prev && prev.sid !== st.sid && prof.name) { me = null; lastHello = 0; net.resub(T_ME); }
+      // Если связь с экраном уже есть, но персональное подтверждение потеряно,
+      // сразу повторяем регистрацию, не оставляя ученика на пустом экране.
+      if (prof.name && !me) hello();
       netStatus(); render();
     } else if (topic === T_ME) {
       if (me && msg.ts < me.ts) return;
@@ -62,9 +73,17 @@
   // Разводим повторные попытки по времени, чтобы десятки телефонов
   // не атаковали MQTT-сервер в одну и ту же миллисекунду.
   // Пока экран не подтвердил регистрацию — повторяем чаще (1,5–3 с), потом раз в 30 с.
+  let lastResub = 0;
   function retryJoin() {
-    if (prof.name && net.online && (!me || Date.now() - lastHello > 30000)) hello();
-    setTimeout(retryJoin, me ? 2500 + Math.round(Math.random() * 2200) : 1500 + Math.round(Math.random() * 1500));
+    if (prof.name && net.online) {
+      const now = Date.now();
+      if (!me && now - lastResub > 6000) {
+        lastResub = now;
+        net.resub(T_ME);
+      }
+      if (!me || now - lastHello > 30000) hello();
+    }
+    setTimeout(retryJoin, me ? 3000 + Math.round(Math.random() * 2500) : 1700 + Math.round(Math.random() * 1800));
   }
   setTimeout(retryJoin, 1200 + Math.round(Math.random() * 1500));
   // повтор ответа, если экран преподавателя не подтвердил
@@ -92,10 +111,8 @@
     }
     if (!joined) return renderJoin();
     if (!st) { $("#topL").textContent = "Битва коммерсантов"; return setView("wait-host", `<div class="center"><div class="spin"></div><div class="card sticker tilt-l"><h1>Ожидание подключения</h1><p>Вопрос появится автоматически, когда преподаватель начнёт игру.</p></div></div>`); }
-    if (!me) {
-      $("#topL").textContent = CFG.roomName;
-      return setView("registering", `<div class="center"><div class="spin"></div><div class="card sticker"><h1>Подключаем к классу</h1><p>Проверяем регистрацию у преподавателя. Не закрывайте страницу.</p></div></div>`);
-    }
+    // Показываем текущий этап занятия сразу после получения состояния ведущего.
+    // Персональное подтверждение продолжает запрашиваться автоматически в фоне.
     // Во время кратких обрывов не заменяем вопрос или результат экраном ожидания.
     // Состояние связи показывается только в небольшой плашке наверху.
     const b = st.block ? byId[st.block] : null;
