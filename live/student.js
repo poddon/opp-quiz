@@ -168,10 +168,11 @@
 
   function renderQuestion(b) {
     const q = b.q[st.qi], qid = U.qid(b.id, st.qi);
-    const mine = (me && me.ans && me.ans[qid]) || pending[qid];
+    const acknowledged = me && me.ans && me.ans[qid];
+    const mine = acknowledged || pending[qid];
     if (mine) {
-      return setView("ans" + qid, `<div class="center"><div class="opt pop" style="font-size:2.4rem;padding:14px;transform:rotate(-6deg)"><span class="L">${U.L[mine.a]}</span></div>
-        <h1 class="slam">Ответ принят!</h1><div class="card sticker tilt-r"><p>Ждём остальных… Смотри на экран.</p></div></div>`);
+      return setView("ans" + qid + (acknowledged ? "-ok" : "-sending"), `<div class="center"><div class="opt pop" style="font-size:2.4rem;padding:14px;transform:rotate(-6deg)"><span class="L">${U.L[mine.a]}</span></div>
+        <h1 class="slam">${acknowledged ? "Ответ принят!" : "Отправляем ответ…"}</h1><div class="card sticker tilt-r"><p>${acknowledged ? "Ждём остальных… Смотри на экран." : "Ждём подтверждение преподавателя. Ответ отправится повторно при восстановлении связи."}</p></div></div>`);
     }
     setView("q" + qid, `
       <div class="qtext sticker tilt-l">${esc(q.t)}</div>
