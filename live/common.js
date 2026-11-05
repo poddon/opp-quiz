@@ -328,8 +328,12 @@
     sub(topic) {
       if (this.subs.has(topic)) return;
       this.subs.add(topic);
+      this.resub(topic);
+    }
+    // Повторяем подписку на персональные ответы, если подтверждение потерялось.
+    resub(topic) {
       if (this.local) { if (this.localUp) this.localSend({ type: "sub", topics: [topic] }); }
-      else this.links.forEach((l) => l.subscribe([topic]));
+      else this.links.forEach((l) => { if (l.up) l.subscribe([topic]); });
     }
     pub(topic, obj, retain = false) {
       if (this.local) return this.localSend({ type: "publish", topic, obj, retain }) ? 1 : 0;
