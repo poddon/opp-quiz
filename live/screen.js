@@ -177,7 +177,9 @@
 
       // Повторные сигналы присутствия не должны перерисовывать весь экран.
       if (m.ty === "join") {
-        publishPlayer(p);
+        // Отвечаем персонально и обычным сообщением, и снимком состояния.
+        // Так регистрация не зависит от поддержки retained-сообщений брокером.
+        publishPlayer(p, true);
         if (changed) { save(); broadcast(); render(); }
         return;
       }
@@ -325,13 +327,16 @@
     }
 
     // ---------- рассылка ----------
-    function publishPlayer(p) {
+    function publishPlayer(p, joinAck = false) {
       ranked();
       const qid = G().phase === "question" ? curQid() : null;
       const ans = {};
       for (const k in p.ans) { const a = p.ans[k]; ans[k] = k === qid ? { a: a.a } : { a: a.a, ok: a.ok, pts: a.pts || 0 }; }
       const pl = { ts: Date.now(), sid: S.sid, key: p.key, name: p.name, score: p.score, streak: p.streak || 0, ans, ev: p.ev.slice(-8) };
-      p.pids.forEach((pid) => net.pub(T_PL(pid), pl, true));
+      for (const pid of p.pids) {
+        net.pub(T_PL(pid), pl, true);
+        if (joinAck) net.pub(T_PL(pid), Object.assign({ mid: U.mid() }, pl), false);
+      }
     }
     // Состояние игры уходит на каждый телефон, поэтому держим его маленьким:
     // полный рейтинг нужен студентам только на экранах результата.
